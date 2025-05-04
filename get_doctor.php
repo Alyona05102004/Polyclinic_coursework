@@ -6,8 +6,8 @@ if (isset($_GET['id'])) {
     
     // Основная информация о враче
     $sql = "SELECT DISTINCT staff.id_doctor, staff.full_name, staff.birthday, staff.post, staff.status, 
-                   staff.address, staff.phone_number, department.name_department, 
-                   info_about_polyclinic.name_polyclinic
+                   staff.address, staff.phone_number, staff.id_department, department.name_department, 
+                   info_about_polyclinic.name_polyclinic, info_about_polyclinic.id_polyclinic 
             FROM staff 
             JOIN department ON department.id_department = staff.id_department
             JOIN connection ON connection.id_department = department.id_department
@@ -51,11 +51,32 @@ if (isset($_GET['id'])) {
     $stmt->execute();
     $qualifications = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     
+    
+    /*$sql_we = "SELECT SUM(
+        CASE 
+            WHEN education.work_experience IS NULL THEN 0 
+            ELSE education.work_experience 
+        END
+     ) as total_exp
+     FROM education
+     JOIN connection_education ON connection_education.id_education = education.id_education
+     WHERE connection_education.id_doctor = ?";
+    
+    $stmt = $conn->prepare($sql_we);
+    $stmt->bind_param("i", $doctor_id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $work_exp_row = $result->fetch_assoc();
+    $total_experience = $work_exp_row['total_exp'];*/
+
+    
+
     // Собираем все данные в один массив
     $response = [
         'doctor' => $doctor_data,
         'educations' => $educations,
-        'qualifications' => $qualifications
+        'qualifications' => $qualifications,
+        //'work_exp' => $total_experience
     ];
     
     echo json_encode($response);

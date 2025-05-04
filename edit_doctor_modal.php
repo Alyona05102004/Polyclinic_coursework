@@ -11,6 +11,15 @@ if (isset($_POST['doctor_id'])) {
 $edit_doctor_sql_philter_field_of_medicine = "SELECT id_field, name_of_field FROM field_of_medicine;";
 $edit_doctor_sql_philter_field_of_medicine_result = $conn->query($edit_doctor_sql_philter_field_of_medicine);
 $edit_doctor_field_of_medicine = $edit_doctor_sql_philter_field_of_medicine_result ? $edit_doctor_sql_philter_field_of_medicine_result->fetch_all(MYSQLI_ASSOC) : [];
+
+$new_doctor_sql_philter_polyclinic = "SELECT id_polyclinic, name_polyclinic FROM info_about_polyclinic;";
+$new_doctor_sql_philter_polyclinic_result = $conn->query($new_doctor_sql_philter_polyclinic);
+$new_doctor_polyclinics = $new_doctor_sql_philter_polyclinic_result ? $new_doctor_sql_philter_polyclinic_result->fetch_all(MYSQLI_ASSOC) : [];
+
+
+$new_doctor_sql_philter_department = "SELECT id_department, name_department FROM department;";
+$new_doctor_sql_philter_department_result = $conn->query($new_doctor_sql_philter_department);
+$new_doctor_departments = $new_doctor_sql_philter_department_result ? $new_doctor_sql_philter_department_result->fetch_all(MYSQLI_ASSOC) : [];
 ?>
 
 <div class="modal fade" id="staff_editModal" data-bs-keyboard="false" tabindex="-1" aria-labelledby="staff_editModal_Label" aria-hidden="true">
@@ -78,12 +87,20 @@ function fetchDoctorData(doctorId) {
                         <input type="text" class="form-control" id="doctorStatus_edit_staff" name="doctorStatus_edit_staff" value="${doctor.status || ''}">
                     </div>
                     <div class="mb-3">
-                        <label for="doctorNamePolyclinic_edit_staff" class="form-label">Поликлиники</label>
-                        <input type="text" class="form-control" id="doctorNamePolyclinic_edit_staff" name="doctorNamePolyclinic_edit_staff" value="${doctor.name_polyclinic || ''}">
+                        <label for="doctorNameDepartment_edit_staff" class="form-label">Отделение</label>
+                        <select class="form-control" id="doctorNameDepartment_edit_staff" name="doctorNameDepartment_edit_staff">
+                            <?php foreach ($new_doctor_departments as $new_doctor_department): ?>
+                                <option value="<?= htmlspecialchars($new_doctor_department['id_department']) ?>"><?= htmlspecialchars($new_doctor_department['name_department']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
                     </div>
                     <div class="mb-3">
-                        <label for="doctorNameDepartment_edit_staff" class="form-label">Отделение</label>
-                        <input type="text" class="form-control" id="doctorNameDepartment_edit_staff" name="doctorNameDepartment_edit_staff" value="${doctor.name_department || ''}">
+                        <label for="doctorNamePolyclinic_edit_staff" class="form-label">Поликлиника</label>
+                        <select class="form-control" id="doctorNamePolyclinic_edit_staff" name="doctorNamePolyclinic_edit_staff">
+                            <?php foreach ($new_doctor_polyclinics as $new_doctor_polyclinic): ?>
+                                <option value="<?= htmlspecialchars($new_doctor_polyclinic['id_polyclinic']) ?>"><?= htmlspecialchars($new_doctor_polyclinic['name_polyclinic']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
                     </div>
                     <h3>Образование</h3>
                     <div class="mb-3">
@@ -93,7 +110,8 @@ function fetchDoctorData(doctorId) {
                             ${educations.map((edu, index) => 
                                 `<option value="${index}" 
                                     data-edu-id="${edu.id_education}"
-                                    //data-edu-institution="${edu.institution || ''}"
+                                    data-edu-institution="${edu.institution || ''}"
+                                    data-edu-work-exp="${edu.work_experience || ''}"
                                     data-type="${edu.type_of_education || ''}"
                                     data-field="${edu.ed_name_of_field || ''}"
                                     data-id-field-edu="${edu.ed_id_field || ''}">
@@ -129,6 +147,9 @@ function fetchDoctorData(doctorId) {
                     </div>
                 `;
 
+            
+            
+
                 document.querySelector('#staff_editModal .modal-body').innerHTML = html;
                 
                 // Инициализируем поля при первой загрузке
@@ -137,6 +158,12 @@ function fetchDoctorData(doctorId) {
                 }
                 if (qualifications.length > 0) {
                     updateQualificationFields(document.getElementById('qualification_select'));
+                }
+                if (doctor.id_polyclinic) {
+                    document.getElementById('doctorNamePolyclinic_edit_staff').value = doctor.id_polyclinic;
+                }
+                if (doctor.id_department) {
+                    document.getElementById('doctorNameDepartment_edit_staff').value = doctor.id_department;
                 }
 
                 // Открыть модальное окно
@@ -152,12 +179,61 @@ function fetchDoctorData(doctorId) {
                 });
                 modal.show();
 
+                const departmentSelect = document.getElementById('doctorNameDepartment_edit_staff');
+                if (departmentSelect) {
+                    departmentSelect.addEventListener('change', function() {
+                        console.log('Событие change сработало');
+                        var department_id = this.value;
+                        var polyclinicSelect = document.getElementById('doctorNamePolyclinic_edit_staff');
+
+                        // Очистить текущие опции поликлиник
+                        polyclinicSelect.innerHTML = '';
+
+                        var xhr = new XMLHttpRequest();
+                        xhr.open('GET', 'get_polyclinics.php?id_department=' + department_id, true);
+                        xhr.onload = function() {
+                            if (xhr.status >= 200 && xhr.status < 300) {
+                                if (xhr.responseText) {
+                                    try {
+                                        var polyclinics = JSON.parse(xhr.responseText);
+                                        if (Array.isArray(polyclinics)) {
+                                            polyclinics.forEach(function(polyclinic) {
+                                                var option = document.createElement('option');
+                                                option.value = polyclinic.id_polyclinic;
+                                                option.textContent = polyclinic.name_polyclinic;
+                                                polyclinicSelect.appendChild(option);
+                                            });
+                                            
+                                        } else {
+                                            console.error('Полученный ответ не является массивом:', polyclinics);
+                                        }
+                                    } catch (e) {
+                                        console.error('Ошибка при разборе JSON:', e);
+                                        console.error('Текст ответа:', xhr.responseText);
+                                    }
+                                } else {
+                                    console.warn('Пустой ответ от сервера.');
+                                }
+                            } else {
+                                console.error('Запрос не выполнен со статусом:', xhr.status);
+                            }
+                        };
+                        xhr.onerror = function() {
+                            console.error('Запрос не выполнен');
+                        };
+                        xhr.send();
+                    });
+                }    
+
             } else {
                 console.error('Нет данных для врача с ID:', doctorId);
             }
         })
         .catch(error => console.error('Ошибка:', error));
-}
+
+        
+} 
+
 
 // Функция для обновления полей образования при выборе из списка
 function updateEducationFields(selectElement) {
@@ -179,6 +255,7 @@ function updateEducationFields(selectElement) {
     const institution = matches ? matches[1] : '';
     const startYear = matches ? matches[2] : '';
     const endYear = matches ? matches[3] : '';
+    const workExperience = option.getAttribute('data-edu-work-exp') || '';
     
     // Создаем HTML для полей образования
     container.innerHTML = `
@@ -189,6 +266,10 @@ function updateEducationFields(selectElement) {
         <div class="mb-3">
             <label for="university_edit_staff" class="form-label">Наименование университета</label>
             <input type="text" class="form-control" id="university_edit_staff" name="university_edit_staff" value="${institution}">
+        </div>
+        <div class="mb-3">
+            <label for="work_exp_edit_staff" class="form-label">Стаж работы по образованию</label>
+            <input type="text" class="form-control" id="work_exp_edit_staff" name="work_exp_edit_staff" value="${workExperience}">
         </div>
         <div class="mb-3">
             <label for="startYear_edit_staff" class="form-label">Год начала обучения</label>
@@ -302,6 +383,10 @@ function addNewEducation() {
             <input type="text" class="form-control" id="new_education_institution">
         </div>
         <div class="mb-3">
+            <label for="new_education_work_exp" class="form-label">Стаж работы по образованию</label>
+            <input type="text" class="form-control" id="new_education_work_exp" name="new_education_work_exp">
+        </div>
+        <div class="mb-3">
             <label class="form-label">Год начала</label>
             <input type="number" class="form-control" id="new_education_start_year" min="1900" max="2100">
         </div>
@@ -327,12 +412,13 @@ function addNewEducation() {
 function confirmAddEducation() {
     const type = document.getElementById('new_education_type').value;
     const institution = document.getElementById('new_education_institution').value;
+    const work_exp = document.getElementById('new_education_work_exp').value;
     const start_year = document.getElementById('new_education_start_year').value;
     const end_year = document.getElementById('new_education_end_year').value;
     const field = document.getElementById('new_education_field').value;
     
     // Проверка заполнения всех полей
-    if (!type || !institution || !start_year || !end_year || !field) {
+    if (!type || !institution || !start_year || !end_year || !field || !work_exp) {
         alert('Пожалуйста, заполните все поля!');
         return;
     }
@@ -342,7 +428,8 @@ function confirmAddEducation() {
         headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
         },
-        body: `operation=add&doctor_id=${currentDoctorId}&type=${encodeURIComponent(type)}&institution=${encodeURIComponent(institution)}&start_year=${start_year}&end_year=${end_year}&field_id=${field}`
+        body: `operation=add&doctor_id=${currentDoctorId}&type=${encodeURIComponent(type)}&institution=${encodeURIComponent(institution)}&work_experience=${encodeURIComponent(work_exp)}
+        &start_year=${start_year}&end_year=${end_year}&field_id=${field}`
     })
     .then(response => response.json())
     .then(data => {
@@ -390,13 +477,15 @@ function saveEducationChanges() {
     const start_year = document.getElementById('startYear_edit_staff').value;
     const end_year = document.getElementById('endYear_edit_staff').value;
     const field_id = document.getElementById('medicalField_edit_staff').value;
+    const work_exp = document.getElementById('work_exp_edit_staff').value;
     
     fetch('education_operations.php', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
         },
-        body: `operation=update&doctor_id=${currentDoctorId}&education_id=${education_id}&type=${encodeURIComponent(type)}&institution=${encodeURIComponent(institution)}&start_year=${start_year}&end_year=${end_year}&field_id=${field_id}`
+        body: `operation=update&doctor_id=${currentDoctorId}&education_id=${education_id}&type=${encodeURIComponent(type)}
+        &institution=${encodeURIComponent(institution)}&start_year=${start_year}&end_year=${end_year}&field_id=${field_id}&work_experience=${encodeURIComponent(work_exp)}`
     })
     .then(response => response.json())
     .then(data => {
@@ -526,48 +615,90 @@ function saveQualifChanges() {
 
 
 document.getElementById('save_edit_DoctorButton').addEventListener('click', function() {
-    // Сохраняем основную информацию
-    saveDoctorInfo().then(() => {
-        // После сохранения основной информации
-        if (document.getElementById('education_id')) {
-            return saveEducationChanges();
-        }
-    }).then(() => {
-        if (document.getElementById('qualification_id')) {
-            return saveQualifChanges();
-        }
-    }).then(() => {
-        alert('Все изменения сохранены!');
-        fetchDoctorData(currentDoctorId);
-    }).catch(error => {
-        console.error('Ошибка при сохранении:', error);
-    });
+    saveDoctorInfo()
+        .then(() => {
+            if (document.getElementById('education_id')) {
+                return saveEducationChanges();
+            }
+        })
+        .then(() => {
+            if (document.getElementById('qualification_id')) {
+                return saveQualifChanges();
+            }
+        })
+        .then(() => {
+            alert('Все изменения сохранены!');
+            fetchDoctorData(currentDoctorId);
+        })
+        .catch(error => {
+            console.error('Ошибка при сохранении:', error);
+            alert('Ошибка при сохранении: ' + error.message);
+        });
 });
 
 function saveDoctorInfo() {
-    const fullName = document.getElementById('fullName_edit_staff').value;
-    const birthDate = document.getElementById('birthDate_edit_staff').value;
-    const phoneNumber = document.getElementById('phoneNumber_edit_staff').value;
-    const address = document.getElementById('doctorAdress_edit_staff').value;
-    const position = document.getElementById('doctorPosition_edit_staff').value;
-    const status = document.getElementById('doctorStatus_edit_staff').value;
-    
-    // Отправка данных на сервер
-    fetch('update_doctor.php', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: `doctor_id=${currentDoctorId}&full_name=${encodeURIComponent(fullName)}&birthday=${birthDate}&phone_number=${phoneNumber}&address=${encodeURIComponent(address)}&post=${encodeURIComponent(position)}&status=${encodeURIComponent(status)}`
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.status !== 'success') {
-            console.error('Ошибка при сохранении данных врача');
-        }
+    return new Promise((resolve, reject) => {
+        const fullName = document.getElementById('fullName_edit_staff').value;
+        const birthDate = document.getElementById('birthDate_edit_staff').value;
+        const phoneNumber = document.getElementById('phoneNumber_edit_staff').value;
+        const address = document.getElementById('doctorAdress_edit_staff').value;
+        const position = document.getElementById('doctorPosition_edit_staff').value;
+        const status = document.getElementById('doctorStatus_edit_staff').value;
+        const id_department = document.getElementById('doctorNameDepartment_edit_staff').value;
+        
+        fetch('update_doctor.php', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: `doctor_id=${currentDoctorId}&full_name=${encodeURIComponent(fullName)}&birthday=${birthDate}&phone_number=${phoneNumber}&address=${encodeURIComponent(address)}&post=${encodeURIComponent(position)}&status=${encodeURIComponent(status)}&id_department=${id_department}`
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                resolve();
+            } else {
+                reject(data.message || 'Неизвестная ошибка');
+            }
+        })
+        .catch(error => reject(error));
     });
 }
 
+
+document.getElementById('delete_edit_DoctorButton').addEventListener('click', function() {
+    DeleteDoctorInfo()
+        .then(() => {
+            alert('Запись о враче удалена!');
+            //fetchDoctorData(currentDoctorId);
+        })
+        .catch(error => {
+            console.error('Ошибка при удалении:', error);
+            alert('Ошибка при удалении: ' + error.message);
+        });
+});
+
+function DeleteDoctorInfo() {
+    return new Promise((resolve, reject) => {
+        
+        fetch('delete_doctor.php', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: `doctor_id=${currentDoctorId}`
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                resolve();
+            } else {
+                reject(data.message || 'Неизвестная ошибка');
+            }
+        })
+        .catch(error => reject(error));
+    });
+}
 
 
 </script>

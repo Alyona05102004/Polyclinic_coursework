@@ -13,10 +13,11 @@ switch ($operation) {
         $institution = $_POST['institution'];
         $start_year = $_POST['start_year'];
         $end_year = $_POST['end_year'];
+        $work_experience=intval($_POST['work_experience']);
         $field_id = intval($_POST['field_id']);
         
-        $stmt = $conn->prepare("INSERT INTO education (type_of_education, educational_institution, year_of_start, year_of_end, id_field) VALUES (?, ?, ?, ?, ?)");
-        $stmt->bind_param("ssssi", $type, $institution, $start_year, $end_year, $field_id);
+        $stmt = $conn->prepare("INSERT INTO education (work_experience, type_of_education, educational_institution, year_of_start, year_of_end, id_field) VALUES (?, ?, ?, ?, ?, ?)");
+        $stmt->bind_param("issssi", $work_experience, $type, $institution, $start_year, $end_year, $field_id);
         $stmt->execute();
         $education_id = $stmt->insert_id;
         
@@ -35,9 +36,10 @@ switch ($operation) {
         $start_year = $_POST['start_year'];
         $end_year = $_POST['end_year'];
         $field_id = intval($_POST['field_id']);
+        $work_experience=intval($_POST['work_experience']);
         
-        $stmt = $conn->prepare("UPDATE education SET type_of_education=?, educational_institution=?, year_of_start=?, year_of_end=?, id_field=? WHERE id_education=?");
-        $stmt->bind_param("ssssii", $type, $institution, $start_year, $end_year, $field_id, $education_id);
+        $stmt = $conn->prepare("UPDATE education SET work_experience=?, type_of_education=?, educational_institution=?, year_of_start=?, year_of_end=?, id_field=? WHERE id_education=?");
+        $stmt->bind_param("ssssii", $work_experience, $type, $institution, $start_year, $end_year, $field_id, $education_id);
         $stmt->execute();
         
         echo json_encode(['status' => 'success']);

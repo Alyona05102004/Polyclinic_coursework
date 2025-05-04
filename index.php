@@ -8,15 +8,58 @@ $sql_philter_polyclinic_result = $conn->query($sql_philter_polyclinic);
 $polyclinics = $sql_philter_polyclinic_result ? $sql_philter_polyclinic_result->fetch_all(MYSQLI_ASSOC) : [];
 
 
+$sql_philter_address_patient="SELECT DISTINCT
+                                TRIM(
+                                    SUBSTRING(
+                                    address,
+                                    LOCATE('г.', address) + 2,
+                                    CASE
+                                        WHEN LOCATE(',', address) > 0 THEN LOCATE(',', address) - LOCATE('г.', address) - 2
+                                        ELSE LENGTH(address) - LOCATE('г.', address) - 1
+                                    END
+                                    )
+                                ) AS city
+                                FROM information_about_patient
+                                WHERE address LIKE 'г.%'";
+$sql_philter_address_patient_result = $conn->query($sql_philter_address_patient);
+$cities = $sql_philter_address_patient_result ? $sql_philter_address_patient_result->fetch_all(MYSQLI_ASSOC) : [];
+
+$sql_philter_address_patient2 = "SELECT DISTINCT
+    TRIM(
+        SUBSTRING(
+            address,
+            LOCATE(',', address) + 1,
+            CASE
+                WHEN LOCATE(', д.', address) > 0 
+                    THEN LOCATE(', д.', address) - LOCATE(',', address) - 1
+                ELSE LENGTH(address) - LOCATE(',', address)
+            END
+        )
+    ) AS street
+FROM information_about_patient
+WHERE address LIKE 'г.%' AND address LIKE '%,%'";
+$sql_philter_address_patient_result2 = $conn->query($sql_philter_address_patient2);
+$streets= $sql_philter_address_patient_result2 ? $sql_philter_address_patient_result2->fetch_all(MYSQLI_ASSOC) : [];
+
+
+
 // Функция для получения HTML-кода таблицы врачей (выносим в функцию для повторного использования)
 function getDoctorsTable($conn, $polyclinic_id = null, $department_id = null, $letters_range = null)
 {
     // Формирование SQL-запроса
-    $sql_doctors = "SELECT staff.id_doctor, staff.full_name, staff.birthday, staff.post, staff.status, staff.address, staff.phone_number, department.name_department, info_about_polyclinic.name_polyclinic
+    $sql_doctors = "SELECT staff.id_doctor, staff.full_name, staff.birthday, staff.post, staff.status, staff.address, 
+    staff.phone_number, department.name_department, info_about_polyclinic.name_polyclinic, SUM(
+        CASE 
+            WHEN education.work_experience IS NULL THEN 0 
+            ELSE education.work_experience 
+        END
+     ) as total_exp
                     FROM staff 
                     JOIN department ON department.id_department = staff.id_department
                     JOIN connection ON connection.id_department = department.id_department
                     JOIN info_about_polyclinic ON info_about_polyclinic.id_polyclinic = connection.id_polyclinic
+                    JOIN connection_education ON connection_education.id_doctor = staff.id_doctor
+                    JOIN education ON connection_education.id_education = education.id_education
                     WHERE 1=1";
 
     if ($polyclinic_id && $polyclinic_id != 'all') {
@@ -31,6 +74,7 @@ function getDoctorsTable($conn, $polyclinic_id = null, $department_id = null, $l
         $last_letter = trim($letters[1]);
         $sql_doctors .= " AND (staff.full_name BETWEEN '$first_letter' AND '$last_letter' OR staff.full_name Like '$first_letter%' OR staff.full_name LIKE '$last_letter%')";
     }
+    $sql_doctors .= " GROUP BY staff.id_doctor";
 
     $sql_doctors_result = $conn->query($sql_doctors);
     $doctors = $sql_doctors_result ? $sql_doctors_result->fetch_all(MYSQLI_ASSOC) : [];
@@ -43,6 +87,7 @@ function getDoctorsTable($conn, $polyclinic_id = null, $department_id = null, $l
                         <th>ФИО</th>
                         <th>Дата рождения</th>
                         <th>Должность</th>
+                        <th>Общий стаж работы</th>
                         <th>Статус</th>
                         <th>Адрес</th>
                         <th>Телефон</th>
@@ -56,6 +101,7 @@ function getDoctorsTable($conn, $polyclinic_id = null, $department_id = null, $l
                             <td style='cursor: pointer;' class='doctor-name' data-id='" . htmlspecialchars($doctor['id_doctor']) . "'>" . htmlspecialchars($doctor['full_name']) . "</td>
                             <td>" . htmlspecialchars($doctor['birthday']) . "</td>
                             <td>" . htmlspecialchars($doctor['post']) . "</td>
+                            <td>" . htmlspecialchars($doctor['total_exp']) . "</td>
                             <td>" . htmlspecialchars($doctor['status']) . "</td>
                             <td>" . htmlspecialchars($doctor['address']) . "</td>
                             <td>" . htmlspecialchars($doctor['phone_number']) . "</td>
@@ -79,6 +125,86 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 1) {
     // Возвращаем только HTML-код таблицы
     echo getDoctorsTable($conn, $polyclinic_id, $department_id, $letters_range);
     exit(); // Важно! Прекращаем выполнение скрипта после отправки данных
+}
+
+function getPatientsTable($conn, $birthday_date = null, $curent_address = null, $letters_range = null, $last_date=null, $currentGender=null)
+{
+    // Формирование SQL-запроса
+    $sql_patients = "SELECT DISTINCT information_about_patient.id_patient, information_about_patient.full_name, information_about_patient.birthday, information_about_patient.policy_number, information_about_patient.address, information_about_patient.gender 
+    FROM `information_about_patient` 
+    WHERE 1=1";
+
+    if($currentGender && $currentGender!='all'){
+        $sql_patients .= " AND information_about_patient.gender LIKE '$currentGender%'";
+    }
+    if ($birthday_date && $birthday_date != 'all') {
+        $sql_patients .= " AND information_about_patient.birthday LIKE '$birthday_date%'";
+    }
+    if ($curent_address && $curent_address != 'all') {
+        $normalized_address = preg_replace('/^(ул\.|улица|пр\.|проспект|пр-кт\.?)\s*/iu', '', $curent_address);
+        $sql_patients .= " AND (information_about_patient.address LIKE '%" . $conn->real_escape_string($normalized_address) . "%' 
+                          OR information_about_patient.address LIKE '%ул. " . $conn->real_escape_string($normalized_address) . "%'
+                          OR information_about_patient.address LIKE '%улица " . $conn->real_escape_string($normalized_address) . "%')";
+    }
+    if ($letters_range && $letters_range != 'all') {
+        $letters = explode('-', $letters_range);
+        $first_letter = trim($letters[0]);
+        $last_letter = trim($letters[1]);
+        $sql_patients .= " AND (information_about_patient.full_name BETWEEN '$first_letter' AND '$last_letter' OR information_about_patient.full_name Like '$first_letter%' OR information_about_patient.full_name LIKE '$last_letter%')";
+    }
+
+    if ($last_date && $last_date != 'all') {
+        $sql_patients .= " AND EXISTS (
+            SELECT 1 FROM appointment 
+            WHERE appointment.id_patient = information_about_patient.id_patient
+            AND appointment.date LIKE '" . $conn->real_escape_string($last_date) . "%'
+        )";
+    }
+
+    $sql_patients_result = $conn->query($sql_patients);
+    $patients = $sql_patients_result ? $sql_patients_result->fetch_all(MYSQLI_ASSOC) : [];
+
+    $output = '';
+    if ($patients) {
+        $output .= "<table class='table'>";
+        $output .= "<thead><tr>
+                        <th>ID</th>
+                        <th>ФИО</th>
+                        <th>Дата рождения</th>
+                        <th>Номер полиса</th>
+                        <th>Адрес</th>
+                        <th>Пол</th>
+                    </tr></thead>";
+        $output .= "<tbody>";
+        foreach ($patients as $patient) {
+            $output .= "<tr>
+                            <td>" . htmlspecialchars($patient['id_patient']) . "</td>
+                            <td style='cursor: pointer;' class='patient-name' data-id='" . htmlspecialchars($patient['id_patient']) . "'>" . htmlspecialchars($patient['full_name']) . "</td>
+                            <td>" . htmlspecialchars($patient['birthday']) . "</td>
+                            <td>" . htmlspecialchars($patient['policy_number']) . "</td>
+                            <td>" . htmlspecialchars($patient['address']) . "</td>
+                            <td>" . htmlspecialchars($patient['gender']) . "</td>
+                        </tr>";
+        }
+        $output .= "</tbody></table>";
+    } else {
+        $output .= "<p>Нет доступных пациентов.</p>";
+    }
+    return $output;
+}
+
+
+// Обработка AJAX-запроса для пациентов
+if (isset($_POST['ajax']) && $_POST['ajax'] == 2) { // Измените значение на 2 или другое уникальное
+    $birthday_date = $_POST['birthdate'] ?? null;
+    $curent_address = $_POST['curent_address'] ?? null; // Исправлено имя параметра
+    $last_date = $_POST['last_date'] ?? null;
+    $letters_range = $_POST['letters_range'] ?? null;
+    $currentGender = $_POST['currentGender'] ?? null;
+
+    // Возвращаем только HTML-код таблицы с правильными параметрами
+    echo getPatientsTable($conn, $birthday_date, $curent_address, $letters_range, $last_date, $currentGender);
+    exit();
 }
 
 ?>
@@ -115,43 +241,75 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 1) {
         <div class="tab-pane fade show active" id="menu" role="tabpanel" aria-labelledby="menu">
             <p class="fs-2 text-uppercase">Добро пожаловать в систему!</p>
             <?php echo "Соединение успешно установлено!"; ?>
-            <p class="fs-6">В данной системе вы можете получить нужные данные, используя фильтры, а также сформировать
-                отчеты.</p>
+            <p class="fs-6">В данной системе вы можете получить нужные данные, используя фильтры, а также сформировать отчеты.</p>
         </div>
         <div class="tab-pane fade show" id="doctors" role="tabpanel" aria-labelledby="doctors">
-            <p class="fs-2 text-uppercase">Врачи</p>
-            <p class="fs-4">Настроить фильтры</p>
-            <div class="col col-lg-2 d-flex">
-                <select id="polyclinic_id" class="form-select" style="width:100vh; margin-right: 20px;" aria-label="Default select">
-                    <option value="all" selected>Все поликлиники</option>
-                    <?php foreach ($polyclinics as $polyclinic): ?>
-                        <option value="<?= htmlspecialchars($polyclinic['id_polyclinic']) ?>"><?= htmlspecialchars($polyclinic['name_polyclinic']) ?></option>
-                    <?php endforeach; ?>
-                </select>
-                <select id="department_id" class="form-select" style="width:100vh; margin-right: 20px;" aria-label="Выберите отделение">
-                    <option value="all" selected>Все отделения</option>
-                </select>
-                <select id="letters_range" class="form-select" style="width:100vh; margin-right: 20px;" aria-label="Default select">
-                    <option value="all" selected>Все диапазоны</option>
-                    <option value="А-Г">А-Г</option>
-                    <option value="Д-З">Д-З</option>
-                    <option value="И-М">И-М</option>
-                    <option value="Н-Р">Н-Р</option>
-                    <option value="С-Ф">С-Ф</option>
-                    <option value="Х-Ш">Х-Ш</option>
-                    <option value="Щ-Я">Щ-Я</option>
-                </select>
-                <button type="button" class="btn btn-primary" onclick="applyFilters()">
-                    Применить
+            <h2 class="mb-4">Врачи</h2>
+            
+            <!-- Секция фильтров -->
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h4 class="card-title mb-4">Настроить фильтры</h4>
+                    
+                    <!-- Первая строка фильтров -->
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-4">
+                            <label for="polyclinic_id" class="form-label">Поликлиника</label>
+                            <select id="polyclinic_id" class="form-select" aria-label="Выбор поликлиники">
+                                <option value="all" selected>Все поликлиники</option>
+                                <?php foreach ($polyclinics as $polyclinic): ?>
+                                    <option value="<?= htmlspecialchars($polyclinic['id_polyclinic']) ?>"><?= htmlspecialchars($polyclinic['name_polyclinic']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        
+                        <div class="col-md-4">
+                            <label for="department_id" class="form-label">Отделение</label>
+                            <select id="department_id" class="form-select" aria-label="Выбор отделения">
+                                <option value="all" selected>Все отделения</option>
+                            </select>
+                        </div>
+                        
+                        <div class="col-md-4">
+                            <label for="letters_range" class="form-label">Диапазон фамилий</label>
+                            <select id="letters_range" class="form-select" aria-label="Выбор диапазона">
+                                <option value="all" selected>Все диапазоны</option>
+                                <option value="А-Г">А-Г</option>
+                                <option value="Д-З">Д-З</option>
+                                <option value="И-М">И-М</option>
+                                <option value="Н-Р">Н-Р</option>
+                                <option value="С-Ф">С-Ф</option>
+                                <option value="Х-Ш">Х-Ш</option>
+                                <option value="Щ-Я">Щ-Я</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <!-- Вторая строка (кнопка применения) -->
+                    <div class="row g-3">
+                        <div class="col-md-12 d-flex justify-content-end">
+                            <button type="button" class="btn btn-primary" onclick="applyFilters()">
+                                Применить фильтры
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Кнопка добавления -->
+            <div class="mb-4">
+                <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#newDoctorModal">
+                    <i class="bi bi-plus-circle"></i> Добавить врача
                 </button>
             </div>
-            <div class="col col-lg-2 d-flex">
-                <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newDoctorModal" style="margin:20px 20px 20px 0px;">
-                    Добавить врача
-                </button>
-            </div>
-            <div id="doctors_table">
-                <?php echo getDoctorsTable($conn); ?>
+            
+            <!-- Таблица врачей -->
+            <div class="card">
+                <div class="card-body">
+                    <div id="doctors_table">
+                        <?php echo getDoctorsTable($conn); ?>
+                    </div>
+                </div>
             </div>
         </div>
         <?php include 'make_new_doctor.php'; ?> 
@@ -159,9 +317,89 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 1) {
 
 
         <div class="tab-pane fade" id="pacients" role="tabpanel" aria-labelledby="pacients">
-            <p class="fs-2 text-uppercase">Пациенты</p>
-            <p class="fs-4">Настроить фильтры</p>
+    <h2 class="mb-4">Пациенты</h2>
+    
+    <!-- Секция фильтров -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <h4 class="card-title mb-4">Настроить фильтры</h4>
+            
+            <!-- Первая строка фильтров -->
+            <div class="row g-3 mb-3">
+                <div class="col-md-3">
+                    <label for="birthdate" class="form-label">Дата или год рождения</label>
+                    <input type="text" class="form-control" id="birthdate" name="birthdate" data-inputmask="'mask': '9999-99-99'" placeholder="ГГГГ-ММ-ДД">
+                </div>
+                
+                <div class="col-md-3">
+                    <label for="city" class="form-label">Город</label>
+                    <select id="city" class="form-select" aria-label="Выбор города">
+                        <option value="all" selected>Все города</option>
+                        <?php foreach ($cities as $city): ?>
+                            <option value="<?= htmlspecialchars($city['city']) ?>"><?= htmlspecialchars($city['city']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                
+                <div class="col-md-3">
+                    <label for="street" class="form-label">Улица</label>
+                    <select id="street" class="form-select" aria-label="Выбор улицы">
+                        <option value="all" selected>Все улицы</option>
+                        <?php foreach ($streets as $street): ?>
+                            <option value="<?= htmlspecialchars($street['street']) ?>"><?= htmlspecialchars($street['street']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+            </div>
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <label for="currentGender" class="form-label">Пол</label>
+                    <select id="currentGender" class="form-select">
+                        <option value="all" selected>Все</option>
+                        <option value="М">Мужской</option>
+                        <option value="Ж">Женский</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label for="letters_range_patients" class="form-label">Диапазон фамилий</label>
+                    <select id="letters_range_patients" class="form-select">
+                        <option value="all" selected>Все</option>
+                        <option value="А-Г">А-Г</option>
+                        <option value="Д-З">Д-З</option>
+                        <option value="И-М">И-М</option>
+                        <option value="Н-Р">Н-Р</option>
+                        <option value="С-Ф">С-Ф</option>
+                        <option value="Х-Ш">Х-Ш</option>
+                        <option value="Щ-Я">Щ-Я</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label for="lastVisitDate" class="form-label">Дата последнего посещения</label>
+                    <input type="text" class="form-control" id="lastVisitDate" name="lastVisitDate" data-inputmask="'mask': '9999-99-99'" placeholder="ГГГГ-ММ-ДД">
+                </div>
+                
+                <div class="col-md-3 d-flex align-items-end">
+                    <button type="button" class="btn btn-primary w-100" onclick="applyFiltersPatients()">
+                        Применить фильтры
+                    </button>
+                </div>
+            </div>
         </div>
+    </div>
+    <div class="mb-4">
+        <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#newPatientModal">
+            <i class="bi bi-plus-circle"></i> Добавить пациента
+        </button>
+    </div>
+    <div class="card">
+        <div class="card-body">
+            <div id="patients_table">
+                <?php echo getPatientsTable($conn); ?>
+            </div>
+        </div>
+    </div>
+</div>
+
         <div class="tab-pane fade" id="appointment" role="tabpanel" aria-labelledby="appointment">
             <p class="fs-2 text-uppercase">Записи</p>
             <p class="fs-4">Настроить фильтры</p>
@@ -304,6 +542,52 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 1) {
 
     });
     
+    function applyFiltersPatients() {
+        try {
+            // Получаем значения фильтров
+            var birthdate = document.getElementById('birthdate')?.value || '';
+            var city = document.getElementById('city')?.value || 'all';
+            var street = document.getElementById('street')?.value || 'all';
+            var currentGender = document.getElementById('currentGender')?.value || 'all';
+            var letters_range = document.getElementById('letters_range_patients')?.value || 'all';
+            var lastVisitDate = document.getElementById('lastVisitDate')?.value || '';
+
+            // Объединяем город и улицу в один адрес
+            var addressParts = [];
+            if (city !== 'all') addressParts.push('г. ' + city);
+            if (street !== 'all') {
+                street = street.replace(/^(ул\.|улица|пр\.|проспект|пр-кт\.?)\s*/i, '').trim();
+                addressParts.push(street);
+            }
+            
+            var address = addressParts.length > 0 ? addressParts.join(', ') : 'all';
+
+            // Создаем AJAX-запрос
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', '', true);
+            xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+            xhr.onload = function() {
+                if (xhr.status === 200) {
+                    document.getElementById('patients_table').innerHTML = xhr.responseText;
+                } else {
+                    alert('Произошла ошибка при выполнении запроса.');
+                }
+            };
+            xhr.onerror = function() {
+                alert('Произошла ошибка при выполнении запроса.');
+            };
+            
+            // Отправляем данные
+            xhr.send('ajax=2&birthdate=' + encodeURIComponent(birthdate) + 
+                    '&curent_address=' + encodeURIComponent(address) + 
+                    '&last_date=' + encodeURIComponent(lastVisitDate) + 
+                    '&letters_range=' + encodeURIComponent(letters_range) + 
+                    '&currentGender=' + encodeURIComponent(currentGender));
+        } catch (e) {
+            console.error('Ошибка в applyFiltersPatients:', e);
+            alert('Произошла ошибка при применении фильтров.');
+        }
+    }
 
 
 </script>
