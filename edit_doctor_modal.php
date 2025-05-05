@@ -26,7 +26,7 @@ $new_doctor_departments = $new_doctor_sql_philter_department_result ? $new_docto
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title fs-2 text-uppercase" id="staff_editModal_Label">Информация о пользователе</h5>
+                <h5 class="modal-title fs-2 text-uppercase" id="staff_editModal_Label">Информация о выбранном враче</h5>
                 <!-- В форме образования -->
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>

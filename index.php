@@ -316,7 +316,7 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 2) { // Измените знач
         <?php include 'edit_doctor_modal.php'; ?> 
 
 
-        <div class="tab-pane fade" id="pacients" role="tabpanel" aria-labelledby="pacients">
+<div class="tab-pane fade" id="pacients" role="tabpanel" aria-labelledby="pacients">
     <h2 class="mb-4">Пациенты</h2>
     
     <!-- Секция фильтров -->
@@ -398,7 +398,19 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 2) { // Измените знач
             </div>
         </div>
     </div>
+
+    <div id="patient-details-container" class="mt-4 d-none">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2>Информация о пациенте</h2>
+            <button type="button" class="btn btn-secondary" onclick="backToPatientsList()">
+                <i class="bi bi-arrow-left"></i> Назад к списку
+            </button>
+        </div>
+        <div id="patient-details-content"></div>
+    </div>
+
 </div>
+<?php include 'make_new_patient.php'; ?> 
 
         <div class="tab-pane fade" id="appointment" role="tabpanel" aria-labelledby="appointment">
             <p class="fs-2 text-uppercase">Записи</p>
@@ -569,6 +581,7 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 2) { // Измените знач
             xhr.onload = function() {
                 if (xhr.status === 200) {
                     document.getElementById('patients_table').innerHTML = xhr.responseText;
+                    bindPatientNameClickEvents();
                 } else {
                     alert('Произошла ошибка при выполнении запроса.');
                 }
@@ -589,6 +602,86 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 2) { // Измените знач
         }
     }
 
+    // Привязка событий клика к именам пациентов
+function bindPatientNameClickEvents() {
+    const patientNameCells = document.querySelectorAll('.patient-name');
+    
+    patientNameCells.forEach(cell => {
+        cell.addEventListener('click', function() {
+            const patientId = this.getAttribute('data-id');
+            showPatientDetails(patientId);
+        });
+    });
+}
+
+// Функция для показа деталей пациента
+function showPatientDetails(patientId) {
+    // Показываем контейнер с деталями
+    document.getElementById('patient-details-container').classList.remove('d-none');
+    // Скрываем таблицу пациентов
+    document.getElementById('patients_table').classList.add('d-none');
+    
+    // Загружаем данные пациента через AJAX
+    fetch('get_patient.php?id=' + patientId)
+        .then(response => response.text())
+        .then(data => {
+            // Вставляем полученные данные
+            document.getElementById('patient-details-content').innerHTML = data;
+            
+            // Добавляем обработчик событий делегирования для переключения таблиц
+            document.getElementById('patient-details-content').addEventListener('change', function(e) {
+                if (e.target.id === 'appointmentsRadio') {
+                    document.getElementById('appointmentsTable').style.display = 'block';
+                    document.getElementById('referralsTable').style.display = 'none';
+                } else if (e.target.id === 'referralsRadio') {
+                    document.getElementById('appointmentsTable').style.display = 'none';
+                    document.getElementById('referralsTable').style.display = 'block';
+                }
+            });
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            document.getElementById('patient-details-content').innerHTML = 
+                '<div class="alert alert-danger">Ошибка загрузки данных</div>';
+        });
+}
+
+// Функция для сохранения изменений пациента
+function savePatientInfo(patientId) {
+    const form = document.getElementById('patientForm');
+    const formData = new FormData(form);
+    
+    fetch('update_patient.php?id=' + patientId, {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            alert('Изменения сохранены!');
+            showPatientDetails(patientId); // Обновляем данные
+        } else {
+            alert('Ошибка: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Произошла ошибка при сохранении');
+    });
+}
+
+// Функция для возврата к списку пациентов
+function backToPatientsList() {
+    // Показываем таблицу пациентов
+    document.getElementById('patients_table').classList.remove('d-none');
+    // Скрываем контейнер с деталями
+    document.getElementById('patient-details-container').classList.add('d-none');
+}
+
+// Инициализация событий при загрузке страницы
+document.addEventListener('DOMContentLoaded', function() {
+    bindPatientNameClickEvents();
+});
 
 </script>
 </html>
