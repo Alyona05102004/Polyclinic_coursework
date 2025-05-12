@@ -120,7 +120,7 @@ if (isset($_GET['id'])) {
                             <tbody>';
     
     foreach ($appointments as $appointment) {
-        $html .= '<tr>
+        $html .= '<tr style="cursor: pointer;" class="patient-appointment" data-id="' . htmlspecialchars($appointment['id_appointment']) . '">
                     <td>'.$appointment['date'].'</td>
                     <td>'.htmlspecialchars($appointment['doctor_name']).'</td>
                     <td>'.htmlspecialchars($appointment['doctor_post']).'</td>
@@ -145,7 +145,7 @@ if (isset($_GET['id'])) {
                       <tbody>';
     
     foreach ($referrals as $referral) {
-        $html .= '<tr>
+        $html .= '<tr style="cursor: pointer;" class="patient-referral" data-id="' . htmlspecialchars($referral['id_referral']) . '">
                     <td>'.$referral['date_of_start'].'</td>
                     <td>'.$referral['date_of_end'].'</td>
                     <td>'.htmlspecialchars($referral['referralDoctorName']).'</td>
@@ -156,9 +156,30 @@ if (isset($_GET['id'])) {
     }
     
     $html .= '</tbody></table></div></div></div>';
-    
+
+
     echo $html;
 }
 
 $conn->close();
 ?>
+
+<style>
+    .btn-group .btn-outline-primary {
+        color: white;
+        border-color: #11999e;
+    }
+    
+    .btn-group .btn-outline-primary:hover {
+        background-color:white;
+        border-color: #11999e;
+        color:  #11999e ;
+    }
+
+    .btn-check:checked + .btn-outline-primary {
+        background-color: #11999e;
+        border-color: #11999e;
+        color: white;
+    }
+</style>
+

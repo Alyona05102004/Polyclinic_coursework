@@ -1,4 +1,4 @@
-<?php
+<?php 
 include 'bd.php';
 
 $new_doctor_sql_philter_polyclinic = "SELECT id_polyclinic, name_polyclinic FROM info_about_polyclinic;";

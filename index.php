@@ -317,6 +317,38 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 2) { // Измените знач
 
 
 <div class="tab-pane fade" id="pacients" role="tabpanel" aria-labelledby="pacients">
+            <!-- Модальное окно для просмотра записи -->
+    <div class="modal fade" id="appointmentModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Детали записи</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="appointmentModalBody">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="referralModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Детали направления</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="referralModalBody">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+                </div>
+            </div>
+        </div>
+    </div>
     <h2 class="mb-4">Пациенты</h2>
     
     <!-- Секция фильтров -->
@@ -627,6 +659,8 @@ function showPatientDetails(patientId) {
         .then(data => {
             // Вставляем полученные данные
             document.getElementById('patient-details-content').innerHTML = data;
+            bindPatientAppointmentClickEvents(patientId);
+            bindPatientReferralClickEvents(patientId);
             
             // Добавляем обработчик событий делегирования для переключения таблиц
             document.getElementById('patient-details-content').addEventListener('change', function(e) {
@@ -682,6 +716,120 @@ function backToPatientsList() {
 document.addEventListener('DOMContentLoaded', function() {
     bindPatientNameClickEvents();
 });
+
+    function bindPatientAppointmentClickEvents(patientId) {
+        const appointmentRows = document.querySelectorAll('.patient-appointment');
+        appointmentRows.forEach(row => {
+            row.addEventListener('click', function() {
+                const appointmentId = this.getAttribute('data-id');
+                console.log(appointmentId);
+                console.log("Вызов fetchAppointmentData с ID:", appointmentId);  
+                fetchAppointmentData(appointmentId, patientId); // Передаем ID пациента
+            });
+        });
+    }
+
+    function fetchAppointmentData(appointmentId, patientId) {
+        // Проверяем, загружен ли Bootstrap
+        if (typeof bootstrap === 'undefined' || !bootstrap.Modal) {
+            console.error("Bootstrap Modal не загружен!");
+            return;
+        }
+
+        // Показываем модальное окно
+        const modalElement = document.getElementById('appointmentModal');
+        const modal = bootstrap.Modal.getInstance(modalElement) || new bootstrap.Modal(modalElement); // Получаем экземпляр модального окна или создаем новый
+        modal.show();
+
+        // Очищаем содержимое модального окна и показываем индикатор загрузки
+        document.getElementById('appointmentModalBody').innerHTML = 'Загрузка данных...';
+
+        // Загружаем данные
+        fetch('edit_appointment.php?id=' + appointmentId + '&patient_id=' + patientId) // Добавляем patientId
+            .then(response => {
+                if (!response.ok) throw new Error("Ошибка сети");
+                return response.text();
+            })
+            .then(data => {
+                document.getElementById('appointmentModalBody').innerHTML = data;
+            })
+            .catch(error => {
+                console.error("Ошибка:", error);
+                document.getElementById('appointmentModalBody').innerHTML =
+                    '<div class="alert alert-danger">Не удалось загрузить данные</div>';
+            });
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        bindPatientAppointmentClickEvents();
+        bindPatientReferralClickEvents();
+
+    });
+
+
+function saveAppointmentData(appointmentId) {
+    const form = document.getElementById('editHistoryForm');
+    const formData = new FormData(form);
+    
+    // Добавляем ID приёма в FormData
+    formData.append('id', appointmentId);
+    
+    fetch('update_history.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            alert('Изменения сохранены!');
+            // Закрываем модальное окно после сохранения
+            const modal = bootstrap.Modal.getInstance(document.getElementById('appointmentModal'));
+            modal.hide();
+        } else {
+            alert('Ошибка: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Произошла ошибка при сохранении');
+    });
+}
+
+function bindPatientReferralClickEvents(patientId) {
+    const referralRows = document.querySelectorAll('.patient-referral');
+    referralRows.forEach(row => {
+        row.addEventListener('click', function() {
+            const referralId = this.getAttribute('data-id');
+            fetchReferralData(referralId, patientId); // Теперь передаём patientId
+        });
+    });
+}
+
+    function fetchReferralData(referraltId, patientId) {
+
+        // Показываем модальное окно
+        const modalElement = document.getElementById('referralModal');
+        const modal = bootstrap.Modal.getInstance(modalElement) || new bootstrap.Modal(modalElement); // Получаем экземпляр модального окна или создаем новый
+        modal.show();
+
+        // Очищаем содержимое модального окна и показываем индикатор загрузки
+        document.getElementById('referralModalBody').innerHTML = 'Загрузка данных...';
+
+        // Загружаем данные
+        fetch('edit_referral.php?id=' + referraltId + '&patient_id=' + patientId) // Добавляем patientId
+            .then(response => {
+                if (!response.ok) throw new Error("Ошибка сети");
+                return response.text();
+            })
+            .then(data => {
+                document.getElementById('referralModalBody').innerHTML = data;
+            })
+            .catch(error => {
+                console.error("Ошибка:", error);
+                document.getElementById('referralModalBody').innerHTML =
+                    '<div class="alert alert-danger">Не удалось загрузить данные</div>';
+            });
+    }
 
 </script>
 </html>
