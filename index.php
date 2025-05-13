@@ -207,6 +207,103 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 2) { // Измените знач
     exit();
 }
 
+function getAppointmentsTable($conn, $polyclinic_id = null, $department_id = null, $letters_range = null, $doctor_id=null, $date_start=null, $date_end=null){
+    // Формирование SQL-запроса
+    $sql_appointments = "SELECT appointment.id_appointment, appointment.date, appointment.id_doctor, staff.full_name as doctorName, staff.post,
+    appointment.id_ranges, operating_ranges.range_start, operating_ranges.range_end, appointment.id_patient, 
+    information_about_patient.full_name as patientName, appointment.id_cabinet, cabinet.number_of_cabinet, appointment.id_referral, 
+    appointment.id_medical_history, department.id_department, department.name_department, info_about_polyclinic.id_polyclinic, 
+    info_about_polyclinic.name_polyclinic, info_about_polyclinic.address
+    FROM appointment
+    JOIN staff ON staff.id_doctor=appointment.id_doctor
+    JOIN operating_ranges ON operating_ranges.id_ranges=appointment.id_ranges
+    JOIN information_about_patient ON information_about_patient.id_patient=appointment.id_patient
+    JOIN cabinet ON cabinet.id_cabinet=appointment.id_cabinet
+    JOIN department ON cabinet.id_department=department.id_department
+    JOIN connection ON connection.id_department=department.id_department
+    JOIN info_about_polyclinic ON info_about_polyclinic.id_polyclinic=connection.id_polyclinic
+    WHERE 1=1";
+
+    if ($polyclinic_id && $polyclinic_id != 'all') {
+        $sql_appointments .= " AND info_about_polyclinic.id_polyclinic = " . intval($polyclinic_id);
+    }
+    if ($department_id && $department_id != 'all') {
+        $sql_appointments .= " AND department.id_department = " . intval($department_id);
+    }
+    if ($letters_range && $letters_range != 'all') {
+        $letters = explode('-', $letters_range);
+        $first_letter = trim($letters[0]);
+        $last_letter = trim($letters[1]);
+        $sql_appointments .= " AND (staff.full_name BETWEEN '$first_letter' AND '$last_letter' OR staff.full_name Like '$first_letter%' OR staff.full_name LIKE '$last_letter%')";
+    }
+    if ($doctor_id && $doctor_id != 'all') {
+        $sql_appointments .= " AND appointment.id_doctor = " . intval($doctor_id);
+    }
+
+    if ($date_start && $date_start != 'all' && $date_end && $date_end != 'all') {
+        $sql_appointments .= " AND appointment.date BETWEEN '$date_start' AND '$date_end'";
+    }
+
+    $sql_appointments .= " GROUP BY appointment.id_appointment";
+
+    $sql_appointments_result = $conn->query($sql_appointments);
+    if (!$sql_appointments_result) {
+        die("Ошибка SQL запроса: " . $conn->error);
+    }
+    $appointments  = $sql_appointments_result ? $sql_appointments_result->fetch_all(MYSQLI_ASSOC) : [];
+
+    $output = '';
+    if ($appointments) {
+        $output .= "<table class='table'>";
+        $output .= "<thead><tr>
+                        <th>ID</th>
+                        <th>Дата</th>
+                        <th>Время</th>
+                        <th>ФИО врача</th>
+                        <th>Должность врача</th>
+                        <th>ФИО пациента</th>
+                        <th>Кабинет</th>
+                        <th>ID направления</th>
+                        <th>Отделение</th>
+                        <th>Наименование поликлиники</th>
+                        <th>Адрес</th>                        
+                    </tr></thead>";
+        $output .= "<tbody>";
+        foreach ($appointments as $appointment) {
+            $output .= "<tr>
+                            <td style='cursor: pointer;' class='appointment-id' data-id='" . htmlspecialchars($appointment['id_appointment']) . "'>" . htmlspecialchars($appointment['id_appointment']) . "</td>
+                            <td>" . htmlspecialchars($appointment['date']) . "</td>
+                            <td>" . htmlspecialchars($appointment['range_start']) . " - " . htmlspecialchars($appointment['range_end']) . "</td>
+                            <td>" . htmlspecialchars($appointment['doctorName']) . "</td>
+                            <td>" . htmlspecialchars($appointment['post']) . "</td>
+                            <td>" . htmlspecialchars($appointment['patientName']) . "</td>
+                            <td>" . htmlspecialchars($appointment['number_of_cabinet']) . "</td>
+                            <td>" . htmlspecialchars($appointment['id_referral']) . "</td>
+                            <td>" . htmlspecialchars($appointment['name_department']) . "</td>
+                            <td>" . htmlspecialchars($appointment['name_polyclinic']) . "</td>
+                            <td>" . htmlspecialchars($appointment['address']) . "</td>
+                        </tr>";
+        }
+        $output .= "</tbody></table>";
+    } else {
+        $output .= "<p>Нет доступных записей.</p>";
+    }
+    return $output;
+}
+
+if (isset($_POST['ajax']) && $_POST['ajax'] == 3) { 
+    $polyclinic_id = $_POST['polyclinic_id'] ?? null;
+    $department_id = $_POST['department_id'] ?? null; 
+    $letters_range = $_POST['letters_range'] ?? null;
+    $doctor_id = $_POST['doctor_id'] ?? null;
+    $date_start = $_POST['date_start'] ?? null;
+    $date_end = $_POST['date_end'] ?? null;
+
+    // Возвращаем только HTML-код таблицы с правильными параметрами
+    echo getAppointmentsTable($conn, $polyclinic_id, $department_id, $letters_range, $doctor_id, $date_start, $date_end);
+    exit();
+}
+
 ?>
 
 <!DOCTYPE html>
@@ -227,15 +324,15 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 2) { // Измените знач
         <a class="nav-link" id="doctors-tab" data-bs-toggle="pill" href="#doctors" role="tab"
            aria-controls="doctors" aria-selected="true">Врачи</a>
         <a class="nav-link" id="pacients-tab" data-bs-toggle="pill" href="#pacients" role="tab"
-           aria-controls="pacients" aria-selected="false">Пациенты</a>
+           aria-controls="pacients" aria-selected="true">Пациенты</a>
         <a class="nav-link" id="appointment-tab" data-bs-toggle="pill" href="#appointment" role="tab"
-           aria-controls="appointment" aria-selected="false">Записи</a>
+           aria-controls="appointment" aria-selected="true">Записи</a>
         <a class="nav-link" id="referral-tab" data-bs-toggle="pill" href="#referral" role="tab"
-           aria-controls="referral" aria-selected="false">Направления</a>
+           aria-controls="referral" aria-selected="true">Направления</a>
         <a class="nav-link" id="info-about-polyclinic-tab" data-bs-toggle="pill" href="#info-about-polyclinic"
-           role="tab" aria-controls="info-about-polyclinic" aria-selected="false">Информация о поликилиниках</a>
+           role="tab" aria-controls="info-about-polyclinic" aria-selected="true">Информация о поликилиниках</a>
         <a class="nav-link" id="reports-tab" data-bs-toggle="pill" href="#reports" role="tab"
-           aria-controls="reports" aria-selected="false">Отчеты</a>
+           aria-controls="reports" aria-selected="true">Отчеты</a>
     </div>
     <div class="tab-content" id="v-pills-tabContent">
         <div class="tab-pane fade show active" id="menu" role="tabpanel" aria-labelledby="menu">
@@ -243,7 +340,7 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 2) { // Измените знач
             <?php echo "Соединение успешно установлено!"; ?>
             <p class="fs-6">В данной системе вы можете получить нужные данные, используя фильтры, а также сформировать отчеты.</p>
         </div>
-        <div class="tab-pane fade show" id="doctors" role="tabpanel" aria-labelledby="doctors">
+        <div class="tab-pane fade" id="doctors" role="tabpanel" aria-labelledby="doctors">
             <h2 class="mb-4">Врачи</h2>
             
             <!-- Секция фильтров -->
@@ -442,16 +539,163 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 2) { // Измените знач
     </div>
 
 </div>
-<?php include 'make_new_patient.php'; ?> 
+        <?php include 'make_new_patient.php'; ?> 
 
         <div class="tab-pane fade" id="appointment" role="tabpanel" aria-labelledby="appointment">
-            <p class="fs-2 text-uppercase">Записи</p>
-            <p class="fs-4">Настроить фильтры</p>
+            <h2 class="mb-4">Записи</h2>
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h4 class="card-title mb-4">Настроить фильтры</h4>
+                    <div class="col-md-4">
+                            <label for="polyclinic_id_appointment" class="form-label">Поликлиника</label>
+                            <select id="polyclinic_id_appointment" class="form-select" aria-label="Выбор поликлиники">
+                                <option value="all" selected>Все поликлиники</option>
+                                <?php foreach ($polyclinics as $polyclinic): ?>
+                                    <option value="<?= htmlspecialchars($polyclinic['id_polyclinic']) ?>"><?= htmlspecialchars($polyclinic['name_polyclinic']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        
+                        <div class="col-md-4">
+                            <label for="department_id_appointment" class="form-label">Отделение</label>
+                            <select id="department_id_appointment" class="form-select" aria-label="Выбор отделения">
+                                <option value="all" selected>Все отделения</option>
+                            </select>
+                        </div>
+                        
+                        <div class="col-md-4">
+                            <label for="letters_range_appointment" class="form-label">Диапазон фамилий</label>
+                            <select id="letters_range_appointment" class="form-select" aria-label="Выбор диапазона">
+                                <option value="all" selected>Все диапазоны</option>
+                                <option value="А-Г">А-Г</option>
+                                <option value="Д-З">Д-З</option>
+                                <option value="И-М">И-М</option>
+                                <option value="Н-Р">Н-Р</option>
+                                <option value="С-Ф">С-Ф</option>
+                                <option value="Х-Ш">Х-Ш</option>
+                                <option value="Щ-Я">Щ-Я</option>
+                            </select>
+                        </div>   
+
+                        <div class="col-md-4">
+                            <label for="doctor_id_appointment" class="form-label">Врачи</label>
+                            <select id="doctor_id_appointment" class="form-select" aria-label="Выбор врача">
+                                <option value="all" selected>Все врачи</option>
+                            </select>
+                        </div>
+
+                        <div class="row-md-3">
+                            <label for="startDate_appointment" class="form-label">Записи в диапазоне с</label>
+                            <input type="text" class="form-control" id="startDate_appointment" name="startDate_appointment" data-inputmask="'mask': '9999-99-99'" placeholder="ГГГГ-ММ-ДД">
+                            <label for="endDate_appointment" class="form-label">по</label>
+                            <input type="text" class="form-control" id="endDate_appointment" name="endDate_appointment" data-inputmask="'mask': '9999-99-99'" placeholder="ГГГГ-ММ-ДД">
+                        </div>
+
+                </div>
+                <div class="row g-3">
+                        <div class="col-md-12 d-flex justify-content-end">
+                            <button type="button" class="btn btn-primary" onclick="applyFiltersAppointment()">
+                                Применить фильтры
+                            </button>
+                        </div>
+                    </div>
+            </div>
+            
+            <!-- Кнопка добавления -->
+            <div class="mb-4">
+                <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#newAppointmentModal">
+                    <i class="bi bi-plus-circle"></i> Добавить запись
+                </button>
+            </div>
+            
+            <!-- Таблица записей -->
+            <div class="card">
+                <div class="card-body">
+                    <div id="appointments_table">
+                        <?php echo getAppointmentsTable($conn); ?>
+                    </div>
+                </div>
+            </div>
         </div>
+
         <div class="tab-pane fade" id="referral" role="tabpanel" aria-labelledby="referral">
-            <p class="fs-2 text-uppercase">Направления</p>
-            <p class="fs-4">Настроить фильтры</p>
+            <h2 class="mb-4">Направления</h2>
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h4 class="card-title mb-4">Настроить фильтры</h4>
+                    <div class="col-md-4">
+                            <label for="polyclinic_id_appointment" class="form-label">Поликлиника</label>
+                            <select id="polyclinic_id_appointment" class="form-select" aria-label="Выбор поликлиники">
+                                <option value="all" selected>Все поликлиники</option>
+                                <?php foreach ($polyclinics as $polyclinic): ?>
+                                    <option value="<?= htmlspecialchars($polyclinic['id_polyclinic']) ?>"><?= htmlspecialchars($polyclinic['name_polyclinic']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        
+                        <div class="col-md-4">
+                            <label for="department_id_appointment" class="form-label">Отделение</label>
+                            <select id="department_id_appointment" class="form-select" aria-label="Выбор отделения">
+                                <option value="all" selected>Все отделения</option>
+                            </select>
+                        </div>
+                        
+                        <div class="col-md-4">
+                            <label for="letters_range_appointment" class="form-label">Диапазон фамилий</label>
+                            <select id="letters_range_appointment" class="form-select" aria-label="Выбор диапазона">
+                                <option value="all" selected>Все диапазоны</option>
+                                <option value="А-Г">А-Г</option>
+                                <option value="Д-З">Д-З</option>
+                                <option value="И-М">И-М</option>
+                                <option value="Н-Р">Н-Р</option>
+                                <option value="С-Ф">С-Ф</option>
+                                <option value="Х-Ш">Х-Ш</option>
+                                <option value="Щ-Я">Щ-Я</option>
+                            </select>
+                        </div>   
+
+                        <div class="col-md-4">
+                            <label for="doctor_id_appointment" class="form-label">Врачи</label>
+                            <select id="doctor_id_appointment" class="form-select" aria-label="Выбор врача">
+                                <option value="all" selected>Все врачи</option>
+                            </select>
+                        </div>
+
+                        <div class="row-md-3">
+                            <label for="startDate_appointment" class="form-label">Записи в диапазоне с</label>
+                            <input type="text" class="form-control" id="startDate_appointment" name="startDate_appointment" data-inputmask="'mask': '9999-99-99'" placeholder="ГГГГ-ММ-ДД">
+                            <label for="endDate_appointment" class="form-label">по</label>
+                            <input type="text" class="form-control" id="endDate_appointment" name="endDate_appointment" data-inputmask="'mask': '9999-99-99'" placeholder="ГГГГ-ММ-ДД">
+                        </div>
+
+                </div>
+                <div class="row g-3">
+                        <div class="col-md-12 d-flex justify-content-end">
+                            <button type="button" class="btn btn-primary" onclick="applyFiltersAppointment()">
+                                Применить фильтры
+                            </button>
+                        </div>
+                    </div>
+            </div>
+            
+            <!-- Кнопка добавления -->
+            <div class="mb-4">
+                <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#newAppointmentModal">
+                    <i class="bi bi-plus-circle"></i> Добавить запись
+                </button>
+            </div>
+            
+            <!-- Таблица записей -->
+            <div class="card">
+                <div class="card-body">
+                    <div id="appointments_table">
+                        <?php echo getAppointmentsTable($conn); ?>
+                    </div>
+                </div>
+            </div>
         </div>
+
+
         <div class="tab-pane fade" id="info-about-polyclinic" role="tabpanel" aria-labelledby="info-about-polyclinic">
             <p class="fs-2 text-uppercase">Информация о поликлиниках</p>
             <p class="fs-4">Настроить фильтры</p>
@@ -586,6 +830,91 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 2) { // Измените знач
 
     });
     
+
+    document.getElementById('polyclinic_id_appointment').addEventListener('change', function () {
+        var polyclinic_id = this.value;
+        var departmentSelect = document.getElementById('department_id_appointment');
+
+        departmentSelect.innerHTML = '<option value="all" selected>Все отделения</option>';
+
+        var xhr = new XMLHttpRequest();
+        //преедаем polyclinic_id как параметр файлу get_departments.php
+        xhr.open('GET', 'get_departments.php?id_polyclinic=' + polyclinic_id, true);
+        xhr.onload = function () {
+            if (xhr.status >= 200 && xhr.status < 300) {
+                if (xhr.responseText) {
+                    try {
+                        var departments = JSON.parse(xhr.responseText);
+                        if (Array.isArray(departments)) {
+                            departments.forEach(function (department) {
+                                var option = document.createElement('option');
+                                option.value = department.id_department;
+                                option.textContent = department.name_department;
+                                departmentSelect.appendChild(option);
+                            });
+                        } else {
+                            console.error('Полученный ответ не является массивом:', departments);
+                        }
+                    } catch (e) {
+                        console.error('Ошибка при разраборе JSON:', e);
+                        console.error('Текст ответа:', xhr.responseText);
+                    }
+                } else {
+                    console.warn('Пустой ответ от сервера.');
+                }
+            } else {
+                console.error('Запрос не выполнен со статусом:', xhr.status);
+            }
+        };
+        xhr.onerror = function () {
+            console.error('Запрос не выполнен');
+        };
+        xhr.send();
+
+    });
+
+    document.getElementById('department_id_appointment').addEventListener('change', function () {
+        var department_id = this.value;
+        var doctorSelect = document.getElementById('doctor_id_appointment');
+
+        doctorSelect.innerHTML = '<option value="all" selected>Все врачи</option>';
+
+        var xhr = new XMLHttpRequest();
+
+        xhr.open('GET', 'get_doctors_philter.php?id_polyclinic=' + department_id, true);
+        xhr.onload = function () {
+            if (xhr.status >= 200 && xhr.status < 300) {
+                if (xhr.responseText) {
+                    try {
+                        var doctors = JSON.parse(xhr.responseText);
+                        if (Array.isArray(doctors)) {
+                            doctors.forEach(function (doctor) {
+                                var option = document.createElement('option');
+                                option.value = doctor.id_doctor;
+                                option.textContent = doctor.full_name;
+                                doctorSelect.appendChild(option);
+                            });
+                        } else {
+                            console.error('Полученный ответ не является массивом:', doctors);
+                        }
+                    } catch (e) {
+                        console.error('Ошибка при разраборе JSON:', e);
+                        console.error('Текст ответа:', xhr.responseText);
+                    }
+                } else {
+                    console.warn('Пустой ответ от сервера.');
+                }
+            } else {
+                console.error('Запрос не выполнен со статусом:', xhr.status);
+            }
+        };
+        xhr.onerror = function () {
+            console.error('Запрос не выполнен');
+        };
+        xhr.send();
+
+    });
+
     function applyFiltersPatients() {
         try {
             // Получаем значения фильтров
@@ -831,5 +1160,33 @@ function bindPatientReferralClickEvents(patientId) {
             });
     }
 
+function applyFiltersAppointment() {
+    var polyclinic_id = document.getElementById('polyclinic_id_appointment').value;
+    var department_id = document.getElementById('department_id_appointment').value;
+    var letters_range = document.getElementById('letters_range_appointment').value;
+    var doctor_id = document.getElementById('doctor_id_appointment').value;
+    var date_start= document.getElementById('startDate_appointment').value;  
+    var date_end= document.getElementById('endDate_appointment').value;
+
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', '', true);
+    xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+    xhr.onload = function() {
+        if (xhr.status === 200) {
+            document.getElementById('appointments_table').innerHTML = xhr.responseText;
+        } else {
+            alert('Произошла ошибка при выполнении запроса.');
+        }
+    };
+    xhr.onerror = function() {
+        alert('Произошла ошибка при выполнении запроса.');
+    };
+    xhr.send('ajax=3&polyclinic_id=' + encodeURIComponent(polyclinic_id) + 
+             '&department_id=' + encodeURIComponent(department_id) + 
+             '&letters_range=' + encodeURIComponent(letters_range) +
+             '&doctor_id=' + encodeURIComponent(doctor_id)+
+             '&date_start=' + encodeURIComponent(date_start)+
+             '&date_end=' + encodeURIComponent(date_end));
+}
 </script>
 </html>
