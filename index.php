@@ -7,7 +7,6 @@ $sql_philter_polyclinic = "SELECT id_polyclinic, name_polyclinic FROM info_about
 $sql_philter_polyclinic_result = $conn->query($sql_philter_polyclinic);
 $polyclinics = $sql_philter_polyclinic_result ? $sql_philter_polyclinic_result->fetch_all(MYSQLI_ASSOC) : [];
 
-
 $sql_philter_address_patient="SELECT DISTINCT
                                 TRIM(
                                     SUBSTRING(
@@ -41,9 +40,6 @@ WHERE address LIKE 'г.%' AND address LIKE '%,%'";
 $sql_philter_address_patient_result2 = $conn->query($sql_philter_address_patient2);
 $streets= $sql_philter_address_patient_result2 ? $sql_philter_address_patient_result2->fetch_all(MYSQLI_ASSOC) : [];
 
-
-
-// Функция для получения HTML-кода таблицы врачей (выносим в функцию для повторного использования)
 function getDoctorsTable($conn, $polyclinic_id = null, $department_id = null, $letters_range = null)
 {
     // Формирование SQL-запроса
@@ -342,13 +338,9 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 3) {
         </div>
         <div class="tab-pane fade" id="doctors" role="tabpanel" aria-labelledby="doctors">
             <h2 class="mb-4">Врачи</h2>
-            
-            <!-- Секция фильтров -->
             <div class="card mb-4">
                 <div class="card-body">
                     <h4 class="card-title mb-4">Настроить фильтры</h4>
-                    
-                    <!-- Первая строка фильтров -->
                     <div class="row g-3 mb-3">
                         <div class="col-md-4">
                             <label for="polyclinic_id" class="form-label">Поликлиника</label>
@@ -381,8 +373,6 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 3) {
                             </select>
                         </div>
                     </div>
-                    
-                    <!-- Вторая строка (кнопка применения) -->
                     <div class="row g-3">
                         <div class="col-md-12 d-flex justify-content-end">
                             <button type="button" class="btn btn-primary" onclick="applyFilters()">
@@ -392,15 +382,11 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 3) {
                     </div>
                 </div>
             </div>
-            
-            <!-- Кнопка добавления -->
             <div class="mb-4">
                 <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#newDoctorModal">
                     <i class="bi bi-plus-circle"></i> Добавить врача
                 </button>
             </div>
-            
-            <!-- Таблица врачей -->
             <div class="card">
                 <div class="card-body">
                     <div id="doctors_table">
@@ -412,141 +398,131 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 3) {
         <?php include 'make_new_doctor.php'; ?> 
         <?php include 'edit_doctor_modal.php'; ?> 
 
-
-<div class="tab-pane fade" id="pacients" role="tabpanel" aria-labelledby="pacients">
-            <!-- Модальное окно для просмотра записи -->
-    <div class="modal fade" id="appointmentModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Детали записи</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body" id="appointmentModalBody">
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+        <div class="modal fade" id="appointmentModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Детали записи</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body" id="appointmentModalBody">
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
 
-    <div class="modal fade" id="referralModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Детали направления</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body" id="referralModalBody">
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+        <div class="modal fade" id="referralModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Детали направления</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body" id="referralModalBody">
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
-    <h2 class="mb-4">Пациенты</h2>
-    
-    <!-- Секция фильтров -->
-    <div class="card mb-4">
-        <div class="card-body">
-            <h4 class="card-title mb-4">Настроить фильтры</h4>
-            
-            <!-- Первая строка фильтров -->
-            <div class="row g-3 mb-3">
-                <div class="col-md-3">
-                    <label for="birthdate" class="form-label">Дата или год рождения</label>
-                    <input type="text" class="form-control" id="birthdate" name="birthdate" data-inputmask="'mask': '9999-99-99'" placeholder="ГГГГ-ММ-ДД">
-                </div>
-                
-                <div class="col-md-3">
-                    <label for="city" class="form-label">Город</label>
-                    <select id="city" class="form-select" aria-label="Выбор города">
-                        <option value="all" selected>Все города</option>
-                        <?php foreach ($cities as $city): ?>
-                            <option value="<?= htmlspecialchars($city['city']) ?>"><?= htmlspecialchars($city['city']) ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                
-                <div class="col-md-3">
-                    <label for="street" class="form-label">Улица</label>
-                    <select id="street" class="form-select" aria-label="Выбор улицы">
-                        <option value="all" selected>Все улицы</option>
-                        <?php foreach ($streets as $street): ?>
-                            <option value="<?= htmlspecialchars($street['street']) ?>"><?= htmlspecialchars($street['street']) ?></option>
-                        <?php endforeach; ?>
-                    </select>
+
+        <div class="tab-pane fade" id="pacients" role="tabpanel" aria-labelledby="pacients">
+            <h2 class="mb-4">Пациенты</h2>
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h4 class="card-title mb-4">Настроить фильтры</h4>
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-3">
+                            <label for="birthdate" class="form-label">Дата или год рождения</label>
+                            <input type="text" class="form-control" id="birthdate" name="birthdate" data-inputmask="'mask': '9999-99-99'" placeholder="ГГГГ-ММ-ДД">
+                        </div>
+                        <div class="col-md-3">
+                            <label for="city" class="form-label">Город</label>
+                            <select id="city" class="form-select" aria-label="Выбор города">
+                                <option value="all" selected>Все города</option>
+                                <?php foreach ($cities as $city): ?>
+                                    <option value="<?= htmlspecialchars($city['city']) ?>"><?= htmlspecialchars($city['city']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label for="street" class="form-label">Улица</label>
+                            <select id="street" class="form-select" aria-label="Выбор улицы">
+                                <option value="all" selected>Все улицы</option>
+                                <?php foreach ($streets as $street): ?>
+                                    <option value="<?= htmlspecialchars($street['street']) ?>"><?= htmlspecialchars($street['street']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-3">
+                            <label for="currentGender" class="form-label">Пол</label>
+                            <select id="currentGender" class="form-select">
+                                <option value="all" selected>Все</option>
+                                <option value="М">Мужской</option>
+                                <option value="Ж">Женский</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label for="letters_range_patients" class="form-label">Диапазон фамилий</label>
+                            <select id="letters_range_patients" class="form-select">
+                                <option value="all" selected>Все</option>
+                                <option value="А-Г">А-Г</option>
+                                <option value="Д-З">Д-З</option>
+                                <option value="И-М">И-М</option>
+                                <option value="Н-Р">Н-Р</option>
+                                <option value="С-Ф">С-Ф</option>
+                                <option value="Х-Ш">Х-Ш</option>
+                                <option value="Щ-Я">Щ-Я</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label for="lastVisitDate" class="form-label">Дата последнего посещения</label>
+                            <input type="text" class="form-control" id="lastVisitDate" name="lastVisitDate" data-inputmask="'mask': '9999-99-99'" placeholder="ГГГГ-ММ-ДД">
+                        </div>
+                        <div class="col-md-3 d-flex align-items-end">
+                            <button type="button" class="btn btn-primary w-100" onclick="applyFiltersPatients()">
+                                Применить фильтры
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
-            <div class="row g-3">
-                <div class="col-md-3">
-                    <label for="currentGender" class="form-label">Пол</label>
-                    <select id="currentGender" class="form-select">
-                        <option value="all" selected>Все</option>
-                        <option value="М">Мужской</option>
-                        <option value="Ж">Женский</option>
-                    </select>
+            <div class="mb-4">
+                <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#newPatientModal">
+                    <i class="bi bi-plus-circle"></i> Добавить пациента
+                </button>
+            </div>
+            <div class="card">
+                <div class="card-body">
+                    <div id="patients_table">
+                        <?php echo getPatientsTable($conn); ?>
+                    </div>
                 </div>
-                <div class="col-md-3">
-                    <label for="letters_range_patients" class="form-label">Диапазон фамилий</label>
-                    <select id="letters_range_patients" class="form-select">
-                        <option value="all" selected>Все</option>
-                        <option value="А-Г">А-Г</option>
-                        <option value="Д-З">Д-З</option>
-                        <option value="И-М">И-М</option>
-                        <option value="Н-Р">Н-Р</option>
-                        <option value="С-Ф">С-Ф</option>
-                        <option value="Х-Ш">Х-Ш</option>
-                        <option value="Щ-Я">Щ-Я</option>
-                    </select>
-                </div>
-                <div class="col-md-3">
-                    <label for="lastVisitDate" class="form-label">Дата последнего посещения</label>
-                    <input type="text" class="form-control" id="lastVisitDate" name="lastVisitDate" data-inputmask="'mask': '9999-99-99'" placeholder="ГГГГ-ММ-ДД">
-                </div>
-                
-                <div class="col-md-3 d-flex align-items-end">
-                    <button type="button" class="btn btn-primary w-100" onclick="applyFiltersPatients()">
-                        Применить фильтры
+            </div>
+            <div id="patient-details-container" class="mt-4 d-none">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h2>Информация о пациенте</h2>
+                    <button type="button" class="btn btn-secondary" onclick="backToPatientsList()">
+                        <i class="bi bi-arrow-left"></i> Назад к списку
                     </button>
                 </div>
+                <div id="patient-details-content"></div>
             </div>
         </div>
-    </div>
-    <div class="mb-4">
-        <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#newPatientModal">
-            <i class="bi bi-plus-circle"></i> Добавить пациента
-        </button>
-    </div>
-    <div class="card">
-        <div class="card-body">
-            <div id="patients_table">
-                <?php echo getPatientsTable($conn); ?>
-            </div>
-        </div>
-    </div>
-
-    <div id="patient-details-container" class="mt-4 d-none">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h2>Информация о пациенте</h2>
-            <button type="button" class="btn btn-secondary" onclick="backToPatientsList()">
-                <i class="bi bi-arrow-left"></i> Назад к списку
-            </button>
-        </div>
-        <div id="patient-details-content"></div>
-    </div>
-
-</div>
-        <?php include 'make_new_patient.php'; ?> 
 
         <div class="tab-pane fade" id="appointment" role="tabpanel" aria-labelledby="appointment">
             <h2 class="mb-4">Записи</h2>
             <div class="card mb-4">
                 <div class="card-body">
                     <h4 class="card-title mb-4">Настроить фильтры</h4>
-                    <div class="col-md-4">
+                    <div class="row mb-3">
+                        <div class="col-md-4">
                             <label for="polyclinic_id_appointment" class="form-label">Поликлиника</label>
                             <select id="polyclinic_id_appointment" class="form-select" aria-label="Выбор поликлиники">
                                 <option value="all" selected>Все поликлиники</option>
@@ -555,14 +531,31 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 3) {
                                 <?php endforeach; ?>
                             </select>
                         </div>
-                        
                         <div class="col-md-4">
                             <label for="department_id_appointment" class="form-label">Отделение</label>
                             <select id="department_id_appointment" class="form-select" aria-label="Выбор отделения">
                                 <option value="all" selected>Все отделения</option>
                             </select>
                         </div>
-                        
+                        <div class="col-md-4">
+                            <label for="doctor_id_appointment" class="form-label">Врачи</label>
+                            <select id="doctor_id_appointment" class="form-select" aria-label="Выбор врача">
+                                <option value="all" selected>Все врачи</option>
+                            </select>    
+                        </div>
+                    </div>
+                            
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <label for="startDate_appointment" class="form-label">Записи в диапазоне с</label>
+                            <input type="text" class="form-control" id="startDate_appointment" name="startDate_appointment" data-inputmask="'mask': '9999-99-99'" placeholder="ГГГГ-ММ-ДД">
+                        </div>
+                        <div class="col-md-4">
+                            <label for="endDate_appointment" class="form-label">по</label>
+                            <input type="text" class="form-control" id="endDate_appointment" name="endDate_appointment" data-inputmask="'mask': '9999-99-99'" placeholder="ГГГГ-ММ-ДД">
+                        </div>
+                    </div>   
+                    <div class="row mb-3">
                         <div class="col-md-4">
                             <label for="letters_range_appointment" class="form-label">Диапазон фамилий</label>
                             <select id="letters_range_appointment" class="form-select" aria-label="Выбор диапазона">
@@ -575,40 +568,27 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 3) {
                                 <option value="Х-Ш">Х-Ш</option>
                                 <option value="Щ-Я">Щ-Я</option>
                             </select>
-                        </div>   
-
-                        <div class="col-md-4">
-                            <label for="doctor_id_appointment" class="form-label">Врачи</label>
-                            <select id="doctor_id_appointment" class="form-select" aria-label="Выбор врача">
-                                <option value="all" selected>Все врачи</option>
-                            </select>
                         </div>
-
-                        <div class="row-md-3">
-                            <label for="startDate_appointment" class="form-label">Записи в диапазоне с</label>
-                            <input type="text" class="form-control" id="startDate_appointment" name="startDate_appointment" data-inputmask="'mask': '9999-99-99'" placeholder="ГГГГ-ММ-ДД">
-                            <label for="endDate_appointment" class="form-label">по</label>
-                            <input type="text" class="form-control" id="endDate_appointment" name="endDate_appointment" data-inputmask="'mask': '9999-99-99'" placeholder="ГГГГ-ММ-ДД">
-                        </div>
-
-                </div>
-                <div class="row g-3">
                         <div class="col-md-12 d-flex justify-content-end">
                             <button type="button" class="btn btn-primary" onclick="applyFiltersAppointment()">
                                 Применить фильтры
                             </button>
                         </div>
-                    </div>
+                    </div>             
+                </div>
             </div>
-            
+                
             <!-- Кнопка добавления -->
             <div class="mb-4">
                 <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#newAppointmentModal">
                     <i class="bi bi-plus-circle"></i> Добавить запись
                 </button>
+                <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#newListAppointmentModal">
+                    <i class="bi bi-plus-circle"></i> Открыть запись
+                </button>
             </div>
-            
-            <!-- Таблица записей -->
+                
+                <!-- Таблица записей -->
             <div class="card">
                 <div class="card-body">
                     <div id="appointments_table">
@@ -620,79 +600,6 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 3) {
 
         <div class="tab-pane fade" id="referral" role="tabpanel" aria-labelledby="referral">
             <h2 class="mb-4">Направления</h2>
-            <div class="card mb-4">
-                <div class="card-body">
-                    <h4 class="card-title mb-4">Настроить фильтры</h4>
-                    <div class="col-md-4">
-                            <label for="polyclinic_id_appointment" class="form-label">Поликлиника</label>
-                            <select id="polyclinic_id_appointment" class="form-select" aria-label="Выбор поликлиники">
-                                <option value="all" selected>Все поликлиники</option>
-                                <?php foreach ($polyclinics as $polyclinic): ?>
-                                    <option value="<?= htmlspecialchars($polyclinic['id_polyclinic']) ?>"><?= htmlspecialchars($polyclinic['name_polyclinic']) ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        
-                        <div class="col-md-4">
-                            <label for="department_id_appointment" class="form-label">Отделение</label>
-                            <select id="department_id_appointment" class="form-select" aria-label="Выбор отделения">
-                                <option value="all" selected>Все отделения</option>
-                            </select>
-                        </div>
-                        
-                        <div class="col-md-4">
-                            <label for="letters_range_appointment" class="form-label">Диапазон фамилий</label>
-                            <select id="letters_range_appointment" class="form-select" aria-label="Выбор диапазона">
-                                <option value="all" selected>Все диапазоны</option>
-                                <option value="А-Г">А-Г</option>
-                                <option value="Д-З">Д-З</option>
-                                <option value="И-М">И-М</option>
-                                <option value="Н-Р">Н-Р</option>
-                                <option value="С-Ф">С-Ф</option>
-                                <option value="Х-Ш">Х-Ш</option>
-                                <option value="Щ-Я">Щ-Я</option>
-                            </select>
-                        </div>   
-
-                        <div class="col-md-4">
-                            <label for="doctor_id_appointment" class="form-label">Врачи</label>
-                            <select id="doctor_id_appointment" class="form-select" aria-label="Выбор врача">
-                                <option value="all" selected>Все врачи</option>
-                            </select>
-                        </div>
-
-                        <div class="row-md-3">
-                            <label for="startDate_appointment" class="form-label">Записи в диапазоне с</label>
-                            <input type="text" class="form-control" id="startDate_appointment" name="startDate_appointment" data-inputmask="'mask': '9999-99-99'" placeholder="ГГГГ-ММ-ДД">
-                            <label for="endDate_appointment" class="form-label">по</label>
-                            <input type="text" class="form-control" id="endDate_appointment" name="endDate_appointment" data-inputmask="'mask': '9999-99-99'" placeholder="ГГГГ-ММ-ДД">
-                        </div>
-
-                </div>
-                <div class="row g-3">
-                        <div class="col-md-12 d-flex justify-content-end">
-                            <button type="button" class="btn btn-primary" onclick="applyFiltersAppointment()">
-                                Применить фильтры
-                            </button>
-                        </div>
-                    </div>
-            </div>
-            
-            <!-- Кнопка добавления -->
-            <div class="mb-4">
-                <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#newAppointmentModal">
-                    <i class="bi bi-plus-circle"></i> Добавить запись
-                </button>
-            </div>
-            
-            <!-- Таблица записей -->
-            <div class="card">
-                <div class="card-body">
-                    <div id="appointments_table">
-                        <?php echo getAppointmentsTable($conn); ?>
-                    </div>
-                </div>
-            </div>
         </div>
 
 
@@ -700,12 +607,13 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 3) {
             <p class="fs-2 text-uppercase">Информация о поликлиниках</p>
             <p class="fs-4">Настроить фильтры</p>
         </div>
+
         <div class="tab-pane fade" id="reports" role="tabpanel" aria-labelledby="reports">
             <p class="fs-2 text-uppercase">Отчеты</p>
             <p class="fs-4">Настроить фильтры</p>
         </div>
+
     </div>
-</div>
 </body>
 <style>
     .nav {
@@ -771,7 +679,6 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 3) {
         xhr.send('ajax=1&polyclinic_id=' + encodeURIComponent(polyclinic_id) + '&department_id=' + encodeURIComponent(department_id) + '&letters_range=' + encodeURIComponent(letters_range));
     }
 
-    // Функция для привязки событий клика к ячейкам с именами врачей
     function bindDoctorNameClickEvents() {
         const doctorNameCells = document.querySelectorAll('.doctor-name');
         
@@ -783,7 +690,6 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 3) {
         });
     }
 
-    // Инициализация событий при загрузке страницы
     document.addEventListener('DOMContentLoaded', function() {
         bindDoctorNameClickEvents(); // Привязываем события при загрузке страницы
     });
@@ -829,7 +735,6 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 3) {
         xhr.send();
 
     });
-    
 
     document.getElementById('polyclinic_id_appointment').addEventListener('change', function () {
         var polyclinic_id = this.value;
@@ -881,7 +786,7 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 3) {
 
         var xhr = new XMLHttpRequest();
 
-        xhr.open('GET', 'get_doctors_philter.php?id_polyclinic=' + department_id, true);
+        xhr.open('GET', 'get_doctors_philter.php?id_department=' + department_id, true);
         xhr.onload = function () {
             if (xhr.status >= 200 && xhr.status < 300) {
                 if (xhr.responseText) {
@@ -914,6 +819,35 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 3) {
         xhr.send();
 
     });
+
+    function applyFiltersAppointment() {
+        var polyclinic_id = document.getElementById('polyclinic_id_appointment').value;
+        var department_id = document.getElementById('department_id_appointment').value;
+        var letters_range = document.getElementById('letters_range_appointment').value;
+        var doctor_id = document.getElementById('doctor_id_appointment').value;
+        var date_start= document.getElementById('startDate_appointment').value;  
+        var date_end= document.getElementById('endDate_appointment').value;
+
+        var xhr = new XMLHttpRequest();
+        xhr.open('POST', '', true);
+        xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+        xhr.onload = function() {
+            if (xhr.status === 200) {
+                document.getElementById('appointments_table').innerHTML = xhr.responseText;
+            } else {
+                alert('Произошла ошибка при выполнении запроса.');
+            }
+        };
+        xhr.onerror = function() {
+            alert('Произошла ошибка при выполнении запроса.');
+        };
+        xhr.send('ajax=3&polyclinic_id=' + encodeURIComponent(polyclinic_id) + 
+                '&department_id=' + encodeURIComponent(department_id) + 
+                '&letters_range=' + encodeURIComponent(letters_range) +
+                '&doctor_id=' + encodeURIComponent(doctor_id)+
+                '&date_start=' + encodeURIComponent(date_start)+
+                '&date_end=' + encodeURIComponent(date_end));
+    }
 
     function applyFiltersPatients() {
         try {
@@ -963,88 +897,87 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 3) {
         }
     }
 
-    // Привязка событий клика к именам пациентов
-function bindPatientNameClickEvents() {
-    const patientNameCells = document.querySelectorAll('.patient-name');
-    
-    patientNameCells.forEach(cell => {
-        cell.addEventListener('click', function() {
-            const patientId = this.getAttribute('data-id');
-            showPatientDetails(patientId);
-        });
-    });
-}
-
-// Функция для показа деталей пациента
-function showPatientDetails(patientId) {
-    // Показываем контейнер с деталями
-    document.getElementById('patient-details-container').classList.remove('d-none');
-    // Скрываем таблицу пациентов
-    document.getElementById('patients_table').classList.add('d-none');
-    
-    // Загружаем данные пациента через AJAX
-    fetch('get_patient.php?id=' + patientId)
-        .then(response => response.text())
-        .then(data => {
-            // Вставляем полученные данные
-            document.getElementById('patient-details-content').innerHTML = data;
-            bindPatientAppointmentClickEvents(patientId);
-            bindPatientReferralClickEvents(patientId);
-            
-            // Добавляем обработчик событий делегирования для переключения таблиц
-            document.getElementById('patient-details-content').addEventListener('change', function(e) {
-                if (e.target.id === 'appointmentsRadio') {
-                    document.getElementById('appointmentsTable').style.display = 'block';
-                    document.getElementById('referralsTable').style.display = 'none';
-                } else if (e.target.id === 'referralsRadio') {
-                    document.getElementById('appointmentsTable').style.display = 'none';
-                    document.getElementById('referralsTable').style.display = 'block';
-                }
+    function bindPatientNameClickEvents() {
+        const patientNameCells = document.querySelectorAll('.patient-name');
+        
+        patientNameCells.forEach(cell => {
+            cell.addEventListener('click', function() {
+                const patientId = this.getAttribute('data-id');
+                showPatientDetails(patientId);
             });
+        });
+    }
+
+    function showPatientDetails(patientId) {
+        // Показываем контейнер с деталями
+        document.getElementById('patient-details-container').classList.remove('d-none');
+        // Скрываем таблицу пациентов
+        document.getElementById('patients_table').classList.add('d-none');
+        
+        // Загружаем данные пациента через AJAX
+        fetch('get_patient.php?id=' + patientId)
+            .then(response => response.text())
+            .then(data => {
+                // Вставляем полученные данные
+                document.getElementById('patient-details-content').innerHTML = data;
+                bindPatientAppointmentClickEvents(patientId);
+                bindPatientReferralClickEvents(patientId);
+                
+                // Добавляем обработчик событий делегирования для переключения таблиц
+                document.getElementById('patient-details-content').addEventListener('change', function(e) {
+                    if (e.target.id === 'appointmentsRadio') {
+                        document.getElementById('appointmentsTable').style.display = 'block';
+                        document.getElementById('referralsTable').style.display = 'none';
+                    } else if (e.target.id === 'referralsRadio') {
+                        document.getElementById('appointmentsTable').style.display = 'none';
+                        document.getElementById('referralsTable').style.display = 'block';
+                    }
+                });
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                document.getElementById('patient-details-content').innerHTML = 
+                    '<div class="alert alert-danger">Ошибка загрузки данных</div>';
+            });
+    }
+    function savePatientInfo(patientId) {
+        const form = document.getElementById('patientForm');
+        const formData = new FormData(form);
+        
+        fetch('update_patient.php?id=' + patientId, {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                alert('Изменения сохранены!');
+                showPatientDetails(patientId); // Обновляем данные
+            } else {
+                alert('Ошибка: ' + data.message);
+            }
         })
         .catch(error => {
             console.error('Error:', error);
-            document.getElementById('patient-details-content').innerHTML = 
-                '<div class="alert alert-danger">Ошибка загрузки данных</div>';
+            alert('Произошла ошибка при сохранении');
         });
-}
+    }
 
-// Функция для сохранения изменений пациента
-function savePatientInfo(patientId) {
-    const form = document.getElementById('patientForm');
-    const formData = new FormData(form);
-    
-    fetch('update_patient.php?id=' + patientId, {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.status === 'success') {
-            alert('Изменения сохранены!');
-            showPatientDetails(patientId); // Обновляем данные
-        } else {
-            alert('Ошибка: ' + data.message);
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert('Произошла ошибка при сохранении');
+    function backToPatientsList() {
+        // Показываем таблицу пациентов
+        document.getElementById('patients_table').classList.remove('d-none');
+        // Скрываем контейнер с деталями
+        document.getElementById('patient-details-container').classList.add('d-none');
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        bindPatientNameClickEvents();
     });
-}
 
-// Функция для возврата к списку пациентов
-function backToPatientsList() {
-    // Показываем таблицу пациентов
-    document.getElementById('patients_table').classList.remove('d-none');
-    // Скрываем контейнер с деталями
-    document.getElementById('patient-details-container').classList.add('d-none');
-}
-
-// Инициализация событий при загрузке страницы
-document.addEventListener('DOMContentLoaded', function() {
-    bindPatientNameClickEvents();
-});
+    document.addEventListener('DOMContentLoaded', function() {
+        bindPatientAppointmentClickEvents();
+        bindPatientReferralClickEvents();
+    });
 
     function bindPatientAppointmentClickEvents(patientId) {
         const appointmentRows = document.querySelectorAll('.patient-appointment');
@@ -1089,50 +1022,43 @@ document.addEventListener('DOMContentLoaded', function() {
             });
     }
 
-    document.addEventListener('DOMContentLoaded', function() {
-        bindPatientAppointmentClickEvents();
-        bindPatientReferralClickEvents();
-
-    });
-
-
-function saveAppointmentData(appointmentId) {
-    const form = document.getElementById('editHistoryForm');
-    const formData = new FormData(form);
-    
-    // Добавляем ID приёма в FormData
-    formData.append('id', appointmentId);
-    
-    fetch('update_history.php', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.status === 'success') {
-            alert('Изменения сохранены!');
-            // Закрываем модальное окно после сохранения
-            const modal = bootstrap.Modal.getInstance(document.getElementById('appointmentModal'));
-            modal.hide();
-        } else {
-            alert('Ошибка: ' + data.message);
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert('Произошла ошибка при сохранении');
-    });
-}
-
-function bindPatientReferralClickEvents(patientId) {
-    const referralRows = document.querySelectorAll('.patient-referral');
-    referralRows.forEach(row => {
-        row.addEventListener('click', function() {
-            const referralId = this.getAttribute('data-id');
-            fetchReferralData(referralId, patientId); // Теперь передаём patientId
+    function saveAppointmentData(appointmentId) {
+        const form = document.getElementById('editHistoryForm');
+        const formData = new FormData(form);
+        
+        // Добавляем ID приёма в FormData
+        formData.append('id', appointmentId);
+        
+        fetch('update_history.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                alert('Изменения сохранены!');
+                // Закрываем модальное окно после сохранения
+                const modal = bootstrap.Modal.getInstance(document.getElementById('appointmentModal'));
+                modal.hide();
+            } else {
+                alert('Ошибка: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Произошла ошибка при сохранении');
         });
-    });
-}
+    }
+
+    function bindPatientReferralClickEvents(patientId) {
+        const referralRows = document.querySelectorAll('.patient-referral');
+        referralRows.forEach(row => {
+            row.addEventListener('click', function() {
+                const referralId = this.getAttribute('data-id');
+                fetchReferralData(referralId, patientId); // Теперь передаём patientId
+            });
+        });
+    }
 
     function fetchReferralData(referraltId, patientId) {
 
@@ -1160,33 +1086,5 @@ function bindPatientReferralClickEvents(patientId) {
             });
     }
 
-function applyFiltersAppointment() {
-    var polyclinic_id = document.getElementById('polyclinic_id_appointment').value;
-    var department_id = document.getElementById('department_id_appointment').value;
-    var letters_range = document.getElementById('letters_range_appointment').value;
-    var doctor_id = document.getElementById('doctor_id_appointment').value;
-    var date_start= document.getElementById('startDate_appointment').value;  
-    var date_end= document.getElementById('endDate_appointment').value;
-
-    var xhr = new XMLHttpRequest();
-    xhr.open('POST', '', true);
-    xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-    xhr.onload = function() {
-        if (xhr.status === 200) {
-            document.getElementById('appointments_table').innerHTML = xhr.responseText;
-        } else {
-            alert('Произошла ошибка при выполнении запроса.');
-        }
-    };
-    xhr.onerror = function() {
-        alert('Произошла ошибка при выполнении запроса.');
-    };
-    xhr.send('ajax=3&polyclinic_id=' + encodeURIComponent(polyclinic_id) + 
-             '&department_id=' + encodeURIComponent(department_id) + 
-             '&letters_range=' + encodeURIComponent(letters_range) +
-             '&doctor_id=' + encodeURIComponent(doctor_id)+
-             '&date_start=' + encodeURIComponent(date_start)+
-             '&date_end=' + encodeURIComponent(date_end));
-}
 </script>
 </html>

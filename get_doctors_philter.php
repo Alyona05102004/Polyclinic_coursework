@@ -1,8 +1,9 @@
 <?php
 include 'bd.php'; 
 
-$department_id = $_GET['id_department'];
-if ($department_id == "all") {
+// Получаем id_department из GET-параметров
+$department_id = isset($_GET['id_department']) ? $_GET['id_department'] : null;
+if ($department_id == "all" || $department_id === null) {
     $sql_philter_doctor = "SELECT staff.id_doctor, staff.full_name FROM staff";
 } else {
     $sql_philter_doctor = "SELECT staff.id_doctor, staff.full_name FROM staff WHERE staff.id_department = " . intval($department_id);
