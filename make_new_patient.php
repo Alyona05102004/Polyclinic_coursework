@@ -14,11 +14,12 @@ $new_doctor_sql_philter_field_of_medicine = "SELECT id_field, name_of_field FROM
 $new_doctor_sql_philter_field_of_medicine_result = $conn->query($new_doctor_sql_philter_field_of_medicine);
 $new_doctor_field_of_medicine = $new_doctor_sql_philter_field_of_medicine_result ? $new_doctor_sql_philter_field_of_medicine_result->fetch_all(MYSQLI_ASSOC) : [];
 ?>
+
 <div class="modal fade" id="newPatientModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="newPatientModalLabel" aria-hidden="true">
             <div class="modal-dialog modal-lg">
                 <div class="modal-content">
                     <div class="modal-header">
-                        <h5 class="modal-title fs-2 text-uppercase" id="newPatientModalLabel">Добавить нового врача</h5>
+                        <h5 class="modal-title fs-2 text-uppercase" id="newPatientModalLabel">Добавить нового пациента</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
                     </div>
                     <div class="modal-body">
@@ -74,8 +75,19 @@ $new_doctor_field_of_medicine = $new_doctor_sql_philter_field_of_medicine_result
                 </div>
             </div>
         </div>
+</div>
 
 <script>
+    document.addEventListener('DOMContentLoaded', function() {
+    const modalButton = document.querySelector('[data-bs-target="#newPatientModal"]');
+    if (modalButton) {
+        modalButton.addEventListener('click', function() {
+        const modal = new bootstrap.Modal(document.getElementById('newPatientModal'));
+        modal.show();
+        });
+    }
+    });
+    
     const fields_patient = [
             { id: 'firstName_patient', regex: /^[А-ЯЁ][а-яё]+$/, errorMessage: 'Имя должно начинаться с заглавной буквы.' },
             { id: 'lastName_patient', regex: /^[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)*$/, errorMessage: 'Фамилия должна начинаться с заглавной буквы.' },

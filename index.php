@@ -203,7 +203,7 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 2) { // Измените знач
     exit();
 }
 
-function getAppointmentsTable($conn, $polyclinic_id = null, $department_id = null, $letters_range = null, $doctor_id=null, $date_start=null, $date_end=null){
+function getAppointmentsTable($conn, $polyclinic_id = null, $department_id = null, $letters_range = null, $doctor_id=null, $date_start=null, $date_end=null, $status=null){
     // Формирование SQL-запроса
     $sql_appointments = "SELECT appointment.id_appointment, appointment.date, appointment.id_doctor, staff.full_name as doctorName, staff.post,
     appointment.id_ranges, operating_ranges.range_start, operating_ranges.range_end, appointment.id_patient, 
@@ -238,6 +238,18 @@ function getAppointmentsTable($conn, $polyclinic_id = null, $department_id = nul
 
     if ($date_start && $date_start != 'all' && $date_end && $date_end != 'all') {
         $sql_appointments .= " AND appointment.date BETWEEN '$date_start' AND '$date_end'";
+    }
+
+    if($status=='busy'){
+        $sql_appointments .= " AND appointment.id_doctor!=0 AND appointment.id_patient!=0";    
+    }
+
+    if($status=='free'){
+        $sql_appointments .= " AND appointment.id_patient=0 AND appointment.id_doctor!=0";    
+    }
+
+    if($status=='appointment_without_doctor'){
+        $sql_appointments .= " AND appointment.id_doctor=0 ";    
     }
 
     $sql_appointments .= " GROUP BY appointment.id_appointment";
@@ -294,9 +306,10 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 3) {
     $doctor_id = $_POST['doctor_id'] ?? null;
     $date_start = $_POST['date_start'] ?? null;
     $date_end = $_POST['date_end'] ?? null;
+    $status = $_POST['status'] ?? null;
 
     // Возвращаем только HTML-код таблицы с правильными параметрами
-    echo getAppointmentsTable($conn, $polyclinic_id, $department_id, $letters_range, $doctor_id, $date_start, $date_end);
+    echo getAppointmentsTable($conn, $polyclinic_id, $department_id, $letters_range, $doctor_id, $date_start, $date_end, $status);
     exit();
 }
 
@@ -310,6 +323,9 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 3) {
     <meta http-equiv="X-UA-Compatible" content="IE=Edge">
     <title>Polyclinic</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery.inputmask/5.0.6/jquery.inputmask.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </head>
 <body>
 <div class="d-flex align-items-start">
@@ -398,6 +414,7 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 3) {
         <?php include 'make_new_doctor.php'; ?> 
         <?php include 'edit_doctor_modal.php'; ?> 
 
+
         <div class="modal fade" id="appointmentModal" tabindex="-1" aria-hidden="true">
             <div class="modal-dialog">
                 <div class="modal-content">
@@ -430,6 +447,7 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 3) {
             </div>
         </div>
 
+       
         <div class="tab-pane fade" id="pacients" role="tabpanel" aria-labelledby="pacients">
             <h2 class="mb-4">Пациенты</h2>
             <div class="card mb-4">
@@ -515,24 +533,9 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 3) {
                 <div id="patient-details-content"></div>
             </div>
         </div>
-        
-        <div class="modal fade" id="newListAppointmentModal" tabindex="-1" aria-hidden="true">
-            <div class="modal-dialog">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h5 class="modal-title">Открыть запись к врачу</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                    </div>
-                    <div class="modal-body" id="newListAppointmentModalBody">
-                    </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
-                    </div>
-                </div>
-            </div>
-        </div>
+        <?php include 'make_new_patient.php'; ?>
 
-        <div class="tab-pane fade" id="appointment" role="tabpanel" aria-labelledby="appointment">
+        <div class="tab-pane fade " id="appointment" role="tabpanel" aria-labelledby="appointment">
             <h2 class="mb-4">Записи</h2>
             <div class="card mb-4">
                 <div class="card-body">
@@ -585,6 +588,24 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 3) {
                                 <option value="Щ-Я">Щ-Я</option>
                             </select>
                         </div>
+                        <div class="appointment-filter_radio">
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="appointmentFilter_radio" id="appointment_all" value="all" checked>
+                                <label class="form-check-label" for="appointment_all">Все записи</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="appointmentFilter_radio" id="appointment_busy" value="busy">
+                                <label class="form-check-label" for="appointment_busy">Занятые записи</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="appointmentFilter_radio" id="appointment_free" value="free">
+                                <label class="form-check-label" for="appointment_free">Свободные записи</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="appointmentFilter_radio" id="appointment_without_doctor" value="without_doctor">
+                                <label class="form-check-label" for="appointment_without_doctor">Нет врача</label>
+                            </div>
+                        </div>
                         <div class="col-md-12 d-flex justify-content-end">
                             <button type="button" class="btn btn-primary" onclick="applyFiltersAppointment()">
                                 Применить фильтры
@@ -596,12 +617,9 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 3) {
                 
             <!-- Кнопка добавления -->
             <div class="mb-4">
-                <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#newAppointmentModal">
-                    <i class="bi bi-plus-circle"></i> Добавить запись
-                </button>
                 <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#newListAppointmentModal">
                     <i class="bi bi-plus-circle"></i> Открыть запись
-                </button>
+                </button>     
             </div>
                 
                 <!-- Таблица записей -->
@@ -613,7 +631,7 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 3) {
                 </div>
             </div>
         </div>
-
+        <?php include 'newListAppointmentModal.php'; ?>
         <div class="tab-pane fade" id="referral" role="tabpanel" aria-labelledby="referral">
             <h2 class="mb-4">Направления</h2>
         </div>
@@ -668,8 +686,9 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 3) {
     }
 
 </style>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
-        crossorigin="anonymous"></script>
+
+
+
 <script>
     function applyFilters() {
         // Получаем значение выбранных фильтров и записываем их в переменные
@@ -843,6 +862,7 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 3) {
         var doctor_id = document.getElementById('doctor_id_appointment').value;
         var date_start= document.getElementById('startDate_appointment').value;  
         var date_end= document.getElementById('endDate_appointment').value;
+        var status=document.querySelector('input[name="appointmentFilter_radio"]:checked').value;
 
         var xhr = new XMLHttpRequest();
         xhr.open('POST', '', true);
@@ -862,7 +882,8 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 3) {
                 '&letters_range=' + encodeURIComponent(letters_range) +
                 '&doctor_id=' + encodeURIComponent(doctor_id)+
                 '&date_start=' + encodeURIComponent(date_start)+
-                '&date_end=' + encodeURIComponent(date_end));
+                '&date_end=' + encodeURIComponent(date_end) +
+                '&status='+ encodeURIComponent(status));
     }
 
     function applyFiltersPatients() {
@@ -1102,130 +1123,11 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 3) {
             });
     }
 
-    document.addEventListener('DOMContentLoaded', function() {
-        // Обработчик для кнопки "Открыть запись"
-        document.querySelector('[data-bs-target="#newListAppointmentModal"]').addEventListener('click', function(e) {
-            e.preventDefault();
-            openAppointmentListModal();
+    document.querySelectorAll('.btn-close, [data-bs-dismiss="modal"]').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const modal = bootstrap.Modal.getInstance(this.closest('.modal'));
+            if (modal) modal.hide();
         });
     });
-
-    function openAppointmentListModal() {
-        // Создаем содержимое модального окна
-        const modalContent = `
-            <div class="modal-header">
-                <h5 class="modal-title">Открыть запись на прием</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <form id="openAppointmentForm">
-                    <div class="mb-3">
-                        <label for="appointmentDate" class="form-label">Дата</label>
-                        <input type="date" class="form-control" id="appointmentDate" required>
-                    </div>
-                    <div class="mb-3">
-                        <label for="appointmentListPolyclinic" class="form-label">Поликлиника</label>
-                        <select class="form-select" id="appointmentListPolyclinic" required>
-                            <option value="" selected disabled>Выберите поликлинику</option>
-                            <?php foreach ($polyclinics as $polyclinic): ?>
-                                <option value="<?= $polyclinic['id_polyclinic'] ?>"><?= htmlspecialchars($polyclinic['name_polyclinic']) ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <label for="appointmentListDepartment" class="form-label">Отделение</label>
-                        <select class="form-select" id="appointmentListDepartment" disabled required>
-                            <option value="" selected disabled>Сначала выберите поликлинику</option>
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <label for="appointmentListDoctor" class="form-label">Врач</label>
-                        <select class="form-select" id="appointmentListDoctor" disabled required>
-                            <option value="" selected disabled>Сначала выберите отделение</option>
-                        </select>
-                    </div>
-                </form>
-                <div id="appointmentListContainer" class="mt-3"></div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
-                <button type="button" class="btn btn-primary" onclick="loadAppointments()">Открыть запись</button>
-            </div>
-        `;
-        document.getElementById('newListAppointmentModal').querySelector('.modal-content').innerHTML = modalContent;
-            // Показываем модальное окно
-            const modal = new bootstrap.Modal(document.getElementById('newListAppointmentModal'));
-            modal.show();
-
-
-                document.getElementById('appointmentListPolyclinic').addEventListener('change', function () {
-            var polyclinic_id = this.value;
-            var departmentSelect = document.getElementById('appointmentListDepartment');
-
-            if (!polyclinic_id) {
-                departmentSelect.disabled = true;
-                departmentSelect.innerHTML = '<option value="" selected disabled>Сначала выберите поликлинику</option>';
-                return;
-            }
-
-            var xhr = new XMLHttpRequest();
-            xhr.open('GET', 'get_departments.php?id_polyclinic=' + polyclinic_id, true);
-            xhr.onload = function () {
-                if (xhr.status >= 200 && xhr.status < 300) {
-                    try {
-                        var departments = JSON.parse(xhr.responseText);
-                        departmentSelect.innerHTML = '<option value="" selected disabled>Выберите отделение</option>';
-                        
-                        departments.forEach(function(dept) {
-                            var option = document.createElement('option');
-                            option.value = dept.id_department;
-                            option.textContent = dept.name_department;
-                            departmentSelect.appendChild(option);
-                        });
-                        
-                        departmentSelect.disabled = false;
-                    } catch (e) {
-                        console.error('Ошибка парсинга JSON:', e);
-                        departmentSelect.innerHTML = '<option value="" selected disabled>Ошибка загрузки</option>';
-                    }
-                } else {
-                    console.error('Ошибка запроса:', xhr.status);
-                    departmentSelect.innerHTML = '<option value="" selected disabled>Ошибка загрузки</option>';
-                }
-            };
-            xhr.onerror = function() {
-                console.error('Ошибка сети');
-                departmentSelect.innerHTML = '<option value="" selected disabled>Ошибка сети</option>';
-            };
-            xhr.send();
-        });
-
-        document.getElementById('appointmentListDepartment').addEventListener('change', function () {
-            var department_id = this.value;
-            var doctorSelect = document.getElementById('appointmentListDoctor');
-
-            if (!department_id) {
-                doctorSelect.disabled = true;
-                return;
-            }
-            
-            fetch(`get_doctors_philter.php?id_department=${department_id}`)
-                .then(response => response.json())
-                .then(doctors => {
-                    doctorSelect.innerHTML = '<option value="" selected disabled>Выберите врача</option>';
-                    doctors.forEach(doctor => {
-                        const option = document.createElement('option');
-                        option.value = doctor.id_doctor;
-                        option.textContent = doctor.full_name;
-                        doctorSelect.appendChild(option);
-                    });
-                    doctorSelect.disabled = false;
-                });
-        });
-    }
-
-
-    
-
 </script>
 </html>
