@@ -99,8 +99,7 @@
 </div>
 
     <script>
-        // Обработчик изменения поликлиники
-        document.getElementById('appointmentListPolyclinic').addEventListener('change', function() {
+       document.getElementById('appointmentListPolyclinic').addEventListener('change', function() {
             const polyclinicId = this.value;
             const departmentSelect = document.getElementById('appointmentListDepartment');
             
@@ -287,7 +286,7 @@
                 }
             });
 
-           
+            console.log('Собранные данные для сохранения:', appointments); // Добавьте эту строку для отладки
 
             if (appointments.length === 0) {
                 throw new Error('Нет записей для сохранения');
@@ -318,7 +317,7 @@
             if (modal) {
                 modal.hide();
             }
-            
+            location.reload();
 
         } catch (error) {
             console.error('Ошибка сохранения:', error);
@@ -330,7 +329,6 @@
     }
     
     $(document).ready(function(){
-        
         $('#appointmentDateFrom').inputmask('9999-99-99', {
             placeholder: 'гггг-мм-дд',
             clearIncomplete: true
@@ -367,6 +365,7 @@
             input.next('.invalid-feedback').remove();
         }
     });
+    
 
 
     

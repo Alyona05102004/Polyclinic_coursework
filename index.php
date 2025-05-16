@@ -278,8 +278,8 @@ function getAppointmentsTable($conn, $polyclinic_id = null, $department_id = nul
                     </tr></thead>";
         $output .= "<tbody>";
         foreach ($appointments as $appointment) {
-            $output .= "<tr>
-                            <td style='cursor: pointer;' class='appointment-id' data-id='" . htmlspecialchars($appointment['id_appointment']) . "'>" . htmlspecialchars($appointment['id_appointment']) . "</td>
+            $output .= "<tr style='cursor: pointer;' class='appointment-id' data-id='" . htmlspecialchars($appointment['id_appointment']) . "'>
+                            <td>" . htmlspecialchars($appointment['id_appointment']) . "</td>
                             <td>" . htmlspecialchars($appointment['date']) . "</td>
                             <td>" . htmlspecialchars($appointment['range_start']) . " - " . htmlspecialchars($appointment['range_end']) . "</td>
                             <td>" . htmlspecialchars($appointment['doctorName']) . "</td>
@@ -685,6 +685,10 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 3) {
         border-color:#11999e;
     }
 
+    .fixed-height-btn {
+        height: 38px;
+    }
+
 </style>
 
 
@@ -870,6 +874,7 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 3) {
         xhr.onload = function() {
             if (xhr.status === 200) {
                 document.getElementById('appointments_table').innerHTML = xhr.responseText;
+                bindAppointmentClickEvents(); 
             } else {
                 alert('Произошла ошибка при выполнении запроса.');
             }
@@ -1129,5 +1134,51 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 3) {
             if (modal) modal.hide();
         });
     });
+
+    document.addEventListener('DOMContentLoaded', function() {
+        bindAppointmentClickEvents(); 
+    });
+
+
+    function bindAppointmentClickEvents() {
+        const appointmentRows = document.querySelectorAll('.appointment-id');
+        
+        appointmentRows.forEach(row => {
+            row.addEventListener('click', function() {
+                const appointmentId = this.getAttribute('data-id');
+                fetchAppointmentDetails(appointmentId);
+            });
+        });
+    }
+    function fetchAppointmentDetails(appointmentId) {
+        // Проверяем, загружен ли Bootstrap
+        if (typeof bootstrap === 'undefined' || !bootstrap.Modal) {
+            console.error("Bootstrap Modal не загружен!");
+            return;
+        }
+
+        // Показываем модальное окно
+        const modalElement = document.getElementById('appointmentModal');
+        const modal = bootstrap.Modal.getInstance(modalElement) || new bootstrap.Modal(modalElement);
+        modal.show();
+
+        // Очищаем содержимое модального окна и показываем индикатор загрузки
+        document.getElementById('appointmentModalBody').innerHTML = 'Загрузка данных...';
+
+        // Загружаем данные
+        fetch('get_appointment_details.php?id=' + appointmentId)
+            .then(response => {
+                if (!response.ok) throw new Error("Ошибка сети");
+                return response.text();
+            })
+            .then(data => {
+                document.getElementById('appointmentModalBody').innerHTML = data;
+            })
+            .catch(error => {
+                console.error("Ошибка:", error);
+                document.getElementById('appointmentModalBody').innerHTML =
+                    '<div class="alert alert-danger">Не удалось загрузить данные</div>';
+            });
+    }
 </script>
 </html>
