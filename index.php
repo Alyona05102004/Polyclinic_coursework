@@ -211,9 +211,9 @@ function getAppointmentsTable($conn, $polyclinic_id = null, $department_id = nul
     appointment.id_medical_history, department.id_department, department.name_department, info_about_polyclinic.id_polyclinic, 
     info_about_polyclinic.name_polyclinic, info_about_polyclinic.address
     FROM appointment
-    JOIN staff ON staff.id_doctor=appointment.id_doctor
+    LEFT JOIN staff ON staff.id_doctor=appointment.id_doctor
     JOIN operating_ranges ON operating_ranges.id_ranges=appointment.id_ranges
-    JOIN information_about_patient ON information_about_patient.id_patient=appointment.id_patient
+    LEFT JOIN information_about_patient ON information_about_patient.id_patient=appointment.id_patient
     JOIN cabinet ON cabinet.id_cabinet=appointment.id_cabinet
     JOIN department ON cabinet.id_department=department.id_department
     JOIN connection ON connection.id_department=department.id_department
@@ -245,14 +245,14 @@ function getAppointmentsTable($conn, $polyclinic_id = null, $department_id = nul
     }
 
     if($status=='free'){
-        $sql_appointments .= " AND appointment.id_patient=0 AND appointment.id_doctor!=0";    
+        $sql_appointments .= " AND appointment.id_patient IS NULL AND appointment.id_doctor!=0";    
     }
 
-    if($status=='appointment_without_doctor'){
-        $sql_appointments .= " AND appointment.id_doctor=0 ";    
+    if($status=='without_doctor'){
+        $sql_appointments .= " AND appointment.id_doctor IS NULL";    
     }
 
-    $sql_appointments .= " GROUP BY appointment.id_appointment";
+   // $sql_appointments .= " GROUP BY appointment.id_appointment";
 
     $sql_appointments_result = $conn->query($sql_appointments);
     if (!$sql_appointments_result) {
