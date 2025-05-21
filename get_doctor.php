@@ -51,25 +51,6 @@ if (isset($_GET['id'])) {
     $stmt->execute();
     $qualifications = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     
-    
-    /*$sql_we = "SELECT SUM(
-        CASE 
-            WHEN education.work_experience IS NULL THEN 0 
-            ELSE education.work_experience 
-        END
-     ) as total_exp
-     FROM education
-     JOIN connection_education ON connection_education.id_education = education.id_education
-     WHERE connection_education.id_doctor = ?";
-    
-    $stmt = $conn->prepare($sql_we);
-    $stmt->bind_param("i", $doctor_id);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $work_exp_row = $result->fetch_assoc();
-    $total_experience = $work_exp_row['total_exp'];*/
-
-    
 
     // Собираем все данные в один массив
     $response = [

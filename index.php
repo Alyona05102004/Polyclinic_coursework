@@ -2,79 +2,37 @@
 <?php
 include 'bd.php'; 
 
-// Получение данных для фильтра поликлиник
-$sql_philter_polyclinic = "SELECT id_polyclinic, name_polyclinic FROM info_about_polyclinic";
-$sql_philter_polyclinic_result = $conn->query($sql_philter_polyclinic);
-$polyclinics = $sql_philter_polyclinic_result ? $sql_philter_polyclinic_result->fetch_all(MYSQLI_ASSOC) : [];
 
-$sql_philter_address_patient="SELECT DISTINCT
-                                TRIM(
-                                    SUBSTRING(
-                                    address,
-                                    LOCATE('г.', address) + 2,
-                                    CASE
-                                        WHEN LOCATE(',', address) > 0 THEN LOCATE(',', address) - LOCATE('г.', address) - 2
-                                        ELSE LENGTH(address) - LOCATE('г.', address) - 1
-                                    END
-                                    )
-                                ) AS city
-                                FROM information_about_patient
-                                WHERE address LIKE 'г.%'";
-$sql_philter_address_patient_result = $conn->query($sql_philter_address_patient);
-$cities = $sql_philter_address_patient_result ? $sql_philter_address_patient_result->fetch_all(MYSQLI_ASSOC) : [];
+// Функция для безопасного вызова процедур
+function callProcedure($conn, $sql) {
+    $data = [];
+    if ($conn->multi_query($sql)) {
+        do {
+            if ($result = $conn->store_result()) {
+                $data = $result->fetch_all(MYSQLI_ASSOC);
+                $result->free();
+            }
+        } while ($conn->more_results() && $conn->next_result());
+    } else {
+        error_log("MySQL error: " . $conn->error);
+    }
+    return $data;
+}
 
-$sql_philter_address_patient2 = "SELECT DISTINCT
-    TRIM(
-        SUBSTRING(
-            address,
-            LOCATE(',', address) + 1,
-            CASE
-                WHEN LOCATE(', д.', address) > 0 
-                    THEN LOCATE(', д.', address) - LOCATE(',', address) - 1
-                ELSE LENGTH(address) - LOCATE(',', address)
-            END
-        )
-    ) AS street
-FROM information_about_patient
-WHERE address LIKE 'г.%' AND address LIKE '%,%'";
-$sql_philter_address_patient_result2 = $conn->query($sql_philter_address_patient2);
-$streets= $sql_philter_address_patient_result2 ? $sql_philter_address_patient_result2->fetch_all(MYSQLI_ASSOC) : [];
+// Получение данных
+$polyclinics = callProcedure($conn, "CALL polyclinic_philter()");
+$cities = callProcedure($conn, "CALL get_cities('information_about_patient')");
+$streets = callProcedure($conn, "CALL get_street('information_about_patient')");
 
+$edit_doctor_sql_philter_field_of_medicine = "SELECT id_field, name_of_field FROM field_of_medicine;";
+$edit_doctor_sql_philter_field_of_medicine_result = $conn->query($edit_doctor_sql_philter_field_of_medicine);
+$edit_doctor_field_of_medicine = $edit_doctor_sql_philter_field_of_medicine_result ? $edit_doctor_sql_philter_field_of_medicine_result->fetch_all(MYSQLI_ASSOC) : [];
 function getDoctorsTable($conn, $polyclinic_id = null, $department_id = null, $letters_range = null)
 {
-    // Формирование SQL-запроса
-    $sql_doctors = "SELECT staff.id_doctor, staff.full_name, staff.birthday, staff.post, staff.status, staff.address, 
-    staff.phone_number, department.name_department, info_about_polyclinic.name_polyclinic, SUM(
-        CASE 
-            WHEN education.work_experience IS NULL THEN 0 
-            ELSE education.work_experience 
-        END
-     ) as total_exp
-                    FROM staff 
-                    JOIN department ON department.id_department = staff.id_department
-                    JOIN connection ON connection.id_department = department.id_department
-                    JOIN info_about_polyclinic ON info_about_polyclinic.id_polyclinic = connection.id_polyclinic
-                    JOIN connection_education ON connection_education.id_doctor = staff.id_doctor
-                    JOIN education ON connection_education.id_education = education.id_education
-                    WHERE 1=1";
-
-    if ($polyclinic_id && $polyclinic_id != 'all') {
-        $sql_doctors .= " AND info_about_polyclinic.id_polyclinic = " . intval($polyclinic_id);
-    }
-    if ($department_id && $department_id != 'all') {
-        $sql_doctors .= " AND department.id_department = " . intval($department_id);
-    }
-    if ($letters_range && $letters_range != 'all') {
-        $letters = explode('-', $letters_range);
-        $first_letter = trim($letters[0]);
-        $last_letter = trim($letters[1]);
-        $sql_doctors .= " AND (staff.full_name BETWEEN '$first_letter' AND '$last_letter' OR staff.full_name Like '$first_letter%' OR staff.full_name LIKE '$last_letter%')";
-    }
-    $sql_doctors .= " GROUP BY staff.id_doctor";
-
-    $sql_doctors_result = $conn->query($sql_doctors);
-    $doctors = $sql_doctors_result ? $sql_doctors_result->fetch_all(MYSQLI_ASSOC) : [];
-
+    $polyclinic_id = is_numeric($polyclinic_id) ? intval($polyclinic_id) : 0;
+    $department_id = is_numeric($department_id) ? intval($department_id) : 0;
+    $letters_range = $letters_range ?? 'all';
+    $doctors = callProcedure($conn, "CALL get_doctors_table($polyclinic_id, $department_id, '$letters_range')");
     $output = '';
     if ($doctors) {
         $output .= "<table class='table'>";
@@ -124,43 +82,16 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 1) {
 }
 
 function getPatientsTable($conn, $birthday_date = null, $curent_address = null, $letters_range = null, $last_date=null, $currentGender=null)
-{
-    // Формирование SQL-запроса
-    $sql_patients = "SELECT DISTINCT information_about_patient.id_patient, information_about_patient.full_name, information_about_patient.birthday, information_about_patient.policy_number, information_about_patient.address, information_about_patient.gender 
-    FROM `information_about_patient` 
-    WHERE 1=1";
+{   
+    $birthday_date = $birthday_date ?? 'NULL';
+    $curent_address = $curent_address ?? 'all';
+    $letters_range = $letters_range ?? 'all';
+    $last_date = $last_date ?? 'NULL';
+    $currentGender = $currentGender ?? 'all';
 
-    if($currentGender && $currentGender!='all'){
-        $sql_patients .= " AND information_about_patient.gender LIKE '$currentGender%'";
-    }
-    if ($birthday_date && $birthday_date != 'all') {
-        $sql_patients .= " AND information_about_patient.birthday LIKE '$birthday_date%'";
-    }
-    if ($curent_address && $curent_address != 'all') {
-        $normalized_address = preg_replace('/^(ул\.|улица|пр\.|проспект|пр-кт\.?)\s*/iu', '', $curent_address);
-        $sql_patients .= " AND (information_about_patient.address LIKE '%" . $conn->real_escape_string($normalized_address) . "%' 
-                          OR information_about_patient.address LIKE '%ул. " . $conn->real_escape_string($normalized_address) . "%'
-                          OR information_about_patient.address LIKE '%улица " . $conn->real_escape_string($normalized_address) . "%')";
-    }
-    if ($letters_range && $letters_range != 'all') {
-        $letters = explode('-', $letters_range);
-        $first_letter = trim($letters[0]);
-        $last_letter = trim($letters[1]);
-        $sql_patients .= " AND (information_about_patient.full_name BETWEEN '$first_letter' AND '$last_letter' OR information_about_patient.full_name Like '$first_letter%' OR information_about_patient.full_name LIKE '$last_letter%')";
-    }
-
-    if ($last_date && $last_date != 'all') {
-        $sql_patients .= " AND EXISTS (
-            SELECT 1 FROM appointment 
-            WHERE appointment.id_patient = information_about_patient.id_patient
-            AND appointment.date LIKE '" . $conn->real_escape_string($last_date) . "%'
-        )";
-    }
-
-    $sql_patients_result = $conn->query($sql_patients);
-    $patients = $sql_patients_result ? $sql_patients_result->fetch_all(MYSQLI_ASSOC) : [];
-
+    $patients = callProcedure($conn, "CALL get_patients_table('$birthday_date', '$curent_address', '$letters_range', '$last_date', '$currentGender');");
     $output = '';
+
     if ($patients) {
         $output .= "<table class='table'>";
         $output .= "<thead><tr>
@@ -203,62 +134,18 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 2) { // Измените знач
     exit();
 }
 
-function getAppointmentsTable($conn, $polyclinic_id = null, $department_id = null, $letters_range = null, $doctor_id=null, $date_start=null, $date_end=null, $status=null){
-    // Формирование SQL-запроса
-    $sql_appointments = "SELECT appointment.id_appointment, appointment.date, appointment.id_doctor, staff.full_name as doctorName, staff.post,
-    appointment.id_ranges, operating_ranges.range_start, operating_ranges.range_end, appointment.id_patient, 
-    information_about_patient.full_name as patientName, appointment.id_cabinet, cabinet.number_of_cabinet, appointment.id_referral, 
-    appointment.id_medical_history, department.id_department, department.name_department, info_about_polyclinic.id_polyclinic, 
-    info_about_polyclinic.name_polyclinic, info_about_polyclinic.address
-    FROM appointment
-    LEFT JOIN staff ON staff.id_doctor=appointment.id_doctor
-    JOIN operating_ranges ON operating_ranges.id_ranges=appointment.id_ranges
-    LEFT JOIN information_about_patient ON information_about_patient.id_patient=appointment.id_patient
-    JOIN cabinet ON cabinet.id_cabinet=appointment.id_cabinet
-    JOIN department ON cabinet.id_department=department.id_department
-    JOIN connection ON connection.id_department=department.id_department
-    JOIN info_about_polyclinic ON info_about_polyclinic.id_polyclinic=connection.id_polyclinic
-    WHERE 1=1";
-
-    if ($polyclinic_id && $polyclinic_id != 'all') {
-        $sql_appointments .= " AND info_about_polyclinic.id_polyclinic = " . intval($polyclinic_id);
-    }
-    if ($department_id && $department_id != 'all') {
-        $sql_appointments .= " AND department.id_department = " . intval($department_id);
-    }
-    if ($letters_range && $letters_range != 'all') {
-        $letters = explode('-', $letters_range);
-        $first_letter = trim($letters[0]);
-        $last_letter = trim($letters[1]);
-        $sql_appointments .= " AND (staff.full_name BETWEEN '$first_letter' AND '$last_letter' OR staff.full_name Like '$first_letter%' OR staff.full_name LIKE '$last_letter%')";
-    }
-    if ($doctor_id && $doctor_id != 'all') {
-        $sql_appointments .= " AND appointment.id_doctor = " . intval($doctor_id);
-    }
-
-    if ($date_start && $date_start != 'all' && $date_end && $date_end != 'all') {
-        $sql_appointments .= " AND appointment.date BETWEEN '$date_start' AND '$date_end'";
-    }
-
-    if($status=='busy'){
-        $sql_appointments .= " AND appointment.id_doctor!=0 AND appointment.id_patient!=0";    
-    }
-
-    if($status=='free'){
-        $sql_appointments .= " AND appointment.id_patient IS NULL AND appointment.id_doctor!=0";    
-    }
-
-    if($status=='without_doctor'){
-        $sql_appointments .= " AND appointment.id_doctor IS NULL";    
-    }
-
-   // $sql_appointments .= " GROUP BY appointment.id_appointment";
-
-    $sql_appointments_result = $conn->query($sql_appointments);
-    if (!$sql_appointments_result) {
-        die("Ошибка SQL запроса: " . $conn->error);
-    }
-    $appointments  = $sql_appointments_result ? $sql_appointments_result->fetch_all(MYSQLI_ASSOC) : [];
+function getAppointmentsTable($conn, $polyclinic_id = null, $department_id = null, $letters_range = null, $doctor_id=null, $date_start=null, $date_end=null, $status=null) {
+    // Преобразование параметров для процедуры
+    $polyclinic_id = is_numeric($polyclinic_id) ? intval($polyclinic_id) : 0;
+    $department_id = is_numeric($department_id) ? intval($department_id) : 0;
+    $letters_range = $letters_range ?? 'all';
+    $doctor_id = is_numeric($doctor_id) ? intval($doctor_id) : 0;
+    $date_start = ($date_start && $date_start != 'NULL') ? "'$date_start'" : 'NULL';
+    $date_end = ($date_end && $date_end != 'NULL') ? "'$date_end'" : 'NULL';
+    $status = $status ?? 'all';
+    
+    // Вызываем хранимую процедуру
+    $appointments = callProcedure($conn, "CALL get_appointments_table($polyclinic_id, $department_id, '$letters_range', $doctor_id, $date_start, $date_end, '$status')");
 
     $output = '';
     if ($appointments) {
@@ -313,6 +200,73 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 3) {
     exit();
 }
 
+
+
+
+
+
+//Отчеты
+function getReports1Table($conn, $city = null, $gender = null, $field_of_medicine = null, $age_start=null, $age_end=null, $date_start=null, $date_end=null,  $kol=null, $top=null, $group=null)
+{
+    $city = $city ?? 'all';
+    $gender = $gender ?? 'all';
+    $field_of_medicine = is_numeric($field_of_medicine) ? intval($field_of_medicine) : 0;
+    $age_start = is_numeric($age_start) ? intval($age_start) : 0;
+    $age_end = is_numeric($age_end) ? intval($age_end) : 100;
+    $date_start = $date_start ? "'$date_start'" : 'NULL';
+    $date_end = $date_end ? "'$date_end'" : 'NULL';
+    $kol = is_numeric($kol) ? intval($kol) : 0;
+    $top = is_numeric($top) ? intval($top) : 0;
+    $group = is_numeric($group) ? intval($group) : 0;
+   
+    //$reports1 = callProcedure($conn, "CALL 	getreports1Table('$city', '$gender', $field_of_medicine, $age_start, $age_end, $date_start, $date_end, $kol, $top, $group)");
+    $reports1 = callProcedure($conn, " CALL getreport1Table ($age_start, $age_end, '$city','$gender', $field_of_medicine, $date_start, $date_end, $kol, $group, $top )");
+
+    $output = '';
+    if ($reports1) {
+        $output .= "<table class='table'>";
+        $output .= "<thead><tr>
+                        <th>Наименование заболевания</th>
+                        <th>Процентр обращений</th>
+                        <th>Год</th>
+                        <th>Месяц</th>
+                    </tr></thead>";
+        $output .= "<tbody>";
+        foreach ($reports1 as $report) {
+            $output .= "<tr>
+                            <td>" . htmlspecialchars($report['name_of_disease']) . "</td>
+                            <td>" . htmlspecialchars($report['procent']) . "</td>
+                            <td>" . htmlspecialchars($report['appointment_year']) . "</td>
+                            <td>" . htmlspecialchars($report['appointment_month']) . "</td>
+                        </tr>";
+        }
+        $output .= "</tbody></table>";
+    }
+    else{
+    $output .= "<p>Не удалось сформировать отчет, попробуйте изменить фильтры.</p>";
+    }
+    return $output;
+}
+
+// Обработка AJAX-запроса (если есть)
+if (isset($_POST['ajax']) && $_POST['ajax'] == 4) {
+
+    $city = $_POST['city'] ?? null;
+    $gender = $_POST['gender'] ?? null;
+    $field_of_medicine = $_POST['field_of_medicine'] ?? null;
+    $age_start = $_POST['age_start'] ?? null;
+    $age_end = $_POST['age_end'] ?? null;
+    $date_start = $_POST['date_start'] ?? null;
+    $date_end = $_POST['date_end'] ?? null;
+    $kol = $_POST['kol'] ?? null;
+    $top= $_POST['top'] ?? null;
+    $group = $_POST['group'] ?? null;
+
+    // Возвращаем только HTML-код таблицы
+    echo getReports1Table($conn, $city, $gender, $field_of_medicine, $age_start, $age_end, $date_start, $date_end,  $kol, $top, $group);
+    exit(); // Важно! Прекращаем выполнение скрипта после отправки данных
+}
+
 ?>
 
 <!DOCTYPE html>
@@ -361,7 +315,7 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 3) {
                         <div class="col-md-4">
                             <label for="polyclinic_id" class="form-label">Поликлиника</label>
                             <select id="polyclinic_id" class="form-select" aria-label="Выбор поликлиники">
-                                <option value="all" selected>Все поликлиники</option>
+                                <option value="0" selected>Все поликлиники</option>
                                 <?php foreach ($polyclinics as $polyclinic): ?>
                                     <option value="<?= htmlspecialchars($polyclinic['id_polyclinic']) ?>"><?= htmlspecialchars($polyclinic['name_polyclinic']) ?></option>
                                 <?php endforeach; ?>
@@ -371,7 +325,7 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 3) {
                         <div class="col-md-4">
                             <label for="department_id" class="form-label">Отделение</label>
                             <select id="department_id" class="form-select" aria-label="Выбор отделения">
-                                <option value="all" selected>Все отделения</option>
+                                <option value="0" selected>Все отделения</option>
                             </select>
                         </div>
                         
@@ -643,8 +597,91 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 3) {
         </div>
 
         <div class="tab-pane fade" id="reports" role="tabpanel" aria-labelledby="reports">
-            <p class="fs-2 text-uppercase">Отчеты</p>
-            <p class="fs-4">Настроить фильтры</p>
+            <h2 class="mb-4">Отчеты</h2>
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h4 class="card-title mb-4">Отчет 1. Популярность заболеваний у различных возрастных групп</h4>
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-3">
+                            <label for="city_report1" class="form-label">Город:</label>
+                            <select id="city_report1" class="form-select" aria-label="Выбор города">
+                                <option value="all" selected>Все города</option>
+                                <?php foreach ($cities as $city): ?>
+                                    <option value="<?= htmlspecialchars($city['city']) ?>"><?= htmlspecialchars($city['city']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label for="gender_report1" class="form-label">Пол:</label>
+                            <select id="gender_report1" class="form-select">
+                                <option value="all" selected>Все</option>
+                                <option value="М">Мужской</option>
+                                <option value="Ж">Женский</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="medicalField_reports1" class="form-label">Направление в медицине:</label>
+                            <select class="form-select" id="medicalField_reports1">
+                                <option value="0" selected>Все направления</option>
+                                <?php foreach ($edit_doctor_field_of_medicine as $field): ?>
+                                    <option value="<?= htmlspecialchars($field['id_field']) ?>">
+                                        <?= htmlspecialchars($field['name_of_field']) ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-4">
+                            <label for="age_group_start_report1" class="form-label">Возрастная группа в диапазоне с:</label>
+                            <input type="text" class="form-control" id="age_group_start_report1" name="age_group_start_report1" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="age_group_end_report1" class="form-label">по:</label>
+                            <input type="text" class="form-control" id="age_group_end_report1" name="age_group_end_report1" required>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <label for="startDate_report1" class="form-label">Период с:</label>
+                            <input type="text" class="form-control" id="startDate_report1" name="startDate_report1" data-inputmask="'mask': '9999-99-99'" placeholder="ГГГГ-ММ-ДД">
+                        </div>
+                        <div class="col-md-4">
+                            <label for="endDate_report1" class="form-label">по:</label>
+                            <input type="text" class="form-control" id="endDate_report1" name="endDate_report1" data-inputmask="'mask': '9999-99-99'" placeholder="ГГГГ-ММ-ДД">
+                        </div>
+                    </div>  
+
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label for="kol_reports1" class="form-label">Минимальное количество обращений:</label>
+                            <input type="text" class="form-control" id="kol_reports1" name="kol_reports1">
+                        </div>
+                        <div class="col-md-4">
+                            <label for="top_reports1" class="form-label">Составить топ заболеваний:</label>
+                            <input type="text" class="form-control" id="top_reports1" name="top_reports1">
+                        </div>
+                        <div class="col-md-3">
+                            <label for="yslovie_reports1" class="form-label">Группировка:</label>
+                            <select id="yslovie_reports1" class="form-select">
+                                <option value="0" selected>По умолчанию</option>
+                                <option value="1">Группировка по годам</option>
+                                <option value="2">Группировка по месяцам</option>
+                            </select>
+                        </div>
+                        <div class="col-md-12 d-flex justify-content-end">
+                            <button type="button" class="btn btn-primary" onclick="applyFiltersReports1()">
+                                Сформировать отчет
+                            </button>
+                        </div>
+                    </div>
+                    <div class="row g-3">
+                        <div id="reports1_table">
+                            
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
 
     </div>
@@ -1180,5 +1217,132 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 3) {
                     '<div class="alert alert-danger">Не удалось загрузить данные</div>';
             });
     }
+
+    function applyFiltersReports1() {
+        // Получаем значение выбранных фильтров и записываем их в переменные
+        var city = document.getElementById('city_report1').value;
+        var gender = document.getElementById('gender_report1').value;
+        var field_of_medicine = document.getElementById('medicalField_reports1').value;
+        var age_start = document.getElementById('age_group_start_report1').value;
+        var age_end = document.getElementById('age_group_end_report1').value;
+        var date_start  = document.getElementById('startDate_report1').value;
+        var date_end  = document.getElementById('endDate_report1').value;
+        var kol  = document.getElementById('kol_reports1').value;
+        var top  = document.getElementById('top_reports1').value;
+        var group = document.getElementById('yslovie_reports1').value;
+
+
+        // Создаем объект XMLHttpRequest для AJAX-запроса
+        var xhr = new XMLHttpRequest();
+        xhr.open('POST', '', true);
+        xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+        xhr.onload = function () {
+            if (xhr.status === 200) {
+                document.getElementById('reports1_table').innerHTML = xhr.responseText;
+            } else {
+                alert('Произошла ошибка при выполнении запроса.');
+            }
+        };
+        xhr.onerror = function () {
+            alert('Произошла ошибка при выполнении запроса.');
+        };
+        xhr.send('ajax=4&city=' + encodeURIComponent(city) + '&gender=' + encodeURIComponent(gender) + '&field_of_medicine=' + encodeURIComponent(field_of_medicine)
+        + '&age_start=' + encodeURIComponent(age_start)+ '&age_end=' + encodeURIComponent(age_end)+ '&date_start=' + encodeURIComponent(date_start)
+        + '&date_end=' + encodeURIComponent(date_end) + '&kol=' + encodeURIComponent(kol)+ '&top=' + encodeURIComponent(top)+ '&group=' + encodeURIComponent(group));
+    }
+
+/*function updateAppointment(id) {
+    const form = document.getElementById('editAppointmentForm');
+    const formData = new FormData(form);
+    
+    // Добавляем ID записи в FormData, если его нет
+    if (!formData.has('id_appointment')) {
+        formData.append('id_appointment', id);
+    }
+    
+    fetch('update_appointment.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Network response was not ok');
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.status === 'success') {
+            alert('Изменения сохранены успешно!');
+            // Закрываем модальное окно
+            const modal = bootstrap.Modal.getInstance(document.getElementById('appointmentModal'));
+            modal.hide();
+            // Обновляем таблицу (если нужно)
+            applyFiltersAppointment();
+        } else {
+            alert('Ошибка: ' + (data.message || 'Неизвестная ошибка'));
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Произошла ошибка при сохранении: ' + error.message);
+    });
+}*/
+
+function updateAppointment(id) {
+    const form = document.getElementById('editAppointmentForm');
+    const formData = new FormData(form);
+
+    // Добавляем ID записи в FormData, если его нет
+    if (!formData.has('id_appointment')) {
+        formData.append('id_appointment', id);
+    }
+
+    // Добавляем id_patientAppointment, даже если его нет в форме
+    const patientSelect = document.getElementById('id_patientAppointment');
+    if (patientSelect) {
+        formData.append('id_patientAppointment', patientSelect.value);
+    } else {
+        // Если нет элемента select, значит пациент уже назначен, отправляем текущий id
+        // (предполагая, что он где-то сохранен, например, в hidden поле)
+        const existingPatientId = document.querySelector('input[name="existing_patient_id"]'); // Предполагаем, что есть hidden input с именем "existing_patient_id"
+        if (existingPatientId) {
+            formData.append('id_patientAppointment', existingPatientId.value);
+        } else {
+            formData.append('id_patientAppointment', 0); // Или другое значение по умолчанию, если пациента нет
+        }
+    }
+    
+    //Аналогично для полей медицинской истории
+    //...
+
+    fetch('update_appointment.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Network response was not ok');
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.status === 'success') {
+            alert('Изменения сохранены успешно!');
+            // Закрываем модальное окно
+            const modal = bootstrap.Modal.getInstance(document.getElementById('appointmentModal'));
+            modal.hide();
+            // Обновляем таблицу (если нужно)
+            applyFiltersAppointment();
+        } else {
+            alert('Ошибка: ' + (data.message || 'Неизвестная ошибка'));
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Произошла ошибка при сохранении: ' + error.message);
+    });
+}
+
+
 </script>
 </html>

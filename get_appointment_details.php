@@ -7,8 +7,9 @@ if (!isset($_GET['id'])) {
 
 $appointmentId = intval($_GET['id']);
 
+
 // Получаем данные о записи
-$sql = "SELECT appointment.id_appointment, appointment.date, appointment.id_doctor, staff.full_name as doctorName, staff.post,
+$sql = "SELECT appointment.id_appointment, appointment.date, appointment.id_doctor, staff.full_name as doctorName, staff.post, staff.status,
     appointment.id_ranges, operating_ranges.range_start, operating_ranges.range_end, appointment.id_patient, 
     information_about_patient.full_name as patientName, appointment.id_cabinet, cabinet.number_of_cabinet, appointment.id_referral, 
     appointment.id_medical_history, department.id_department, department.name_department, info_about_polyclinic.id_polyclinic, 
@@ -66,6 +67,32 @@ $sql_history="SELECT complaints, name_of_disease, 	symptoms, 	treatment_recommen
     $stmt_history->execute();
     $result_history = $stmt_history->get_result();
     $history_data = $result_history->fetch_assoc();
+
+
+// Получаем список пациентов в зависимости от статуса врача
+if ($appointment['status'] == 0) { // Если врач принимает только по направлению
+    // Получаем пациентов с направлением к этому врачу, но без активной записи
+    $sql_pacients = "SELECT DISTINCT information_about_patient.id_patient, information_about_patient.full_name 
+                    FROM information_about_patient
+                    JOIN referral ON referral.id_patient = information_about_patient.id_patient
+                    WHERE referral.refrerral_doctor = ?
+                    AND NOT EXISTS(
+                        SELECT 1
+                        FROM appointment
+                        WHERE appointment.id_patient = information_about_patient.id_patient
+                        AND appointment.id_doctor = ?
+                    )";
+    $stmt_pacients = $conn->prepare($sql_pacients);
+    $stmt_pacients->bind_param("ii", $appointment['id_doctor'], $appointment['id_doctor']);
+    $stmt_pacients->execute();
+    $pacients = $stmt_pacients->get_result()->fetch_all(MYSQLI_ASSOC);
+} else {
+    // Получаем всех пациентов
+    $sql_pacients = "SELECT id_patient, full_name FROM information_about_patient";
+    $result_pacients = $conn->query($sql_pacients);
+    $pacients = $result_pacients ? $result_pacients->fetch_all(MYSQLI_ASSOC) : [];
+}
+
 ?>
 
 <div class="container-fluid">
@@ -73,6 +100,7 @@ $sql_history="SELECT complaints, name_of_disease, 	symptoms, 	treatment_recommen
         <input type="hidden" name="id_appointment" value="<?= htmlspecialchars($appointment['id_appointment']) ?>">
         <input type="hidden" name="date" value="<?= htmlspecialchars($appointment['date']) ?>">
         <input type="hidden" name="id_ranges" value="<?= htmlspecialchars($appointment['id_ranges']) ?>">
+        <input type="hidden" name="id_doctor" value="<?= htmlspecialchars($appointment['id_doctor']) ?>">
         
         <p><strong>ID записи:</strong> <?= htmlspecialchars($appointment['id_appointment']) ?></p>
         <p><strong>Дата:</strong> <?= htmlspecialchars($appointment['date']) ?></p>
@@ -81,16 +109,21 @@ $sql_history="SELECT complaints, name_of_disease, 	symptoms, 	treatment_recommen
         <p><strong>Должность:</strong> <?= htmlspecialchars($appointment['post'] ?? '') ?></p>
         <?php if ($appointment['id_patient'] != 0 ): ?>
             <p><strong>Пациент:</strong> <?= htmlspecialchars($appointment['patientName'] ?? 'Не указан') ?></p>
-        <?php elseif ($appointment['id_patient'] == 0 ): ?>
-            <label for="id_patietnAppointment" class="form-label"><strong>Выбрать пациента:</strong></label>
-            <select class="form-select" id="id_patietnAppointment" name="id_patietnAppointment" required>
-            <!--LДоделай тут, здесь нужен запрос-->    
-            <?php foreach ($freeCabinets as $cabinet): ?>
-                    <option value="<?= $cabinet['id_cabinet'] ?>" <?= $cabinet['id_cabinet'] == $appointment['id_cabinet'] ? 'selected' : '' ?>>
-                        <?= htmlspecialchars($cabinet['number_of_cabinet']) ?>
-                    </option>
-                <?php endforeach; ?>
-            </select>
+            <?php else: ?>
+            <div class="mb-3">
+                <label for="id_patientAppointment" class="form-label"><strong>Выбрать пациента:</strong></label>
+                <select class="form-select" id="id_patientAppointment" name="id_patientAppointment" required>
+                    <option value="">Выберите пациента</option>
+                    <?php foreach ($pacients as $pacient): ?>
+                        <option value="<?= $pacient['id_patient'] ?>">
+                            <?= htmlspecialchars($pacient['full_name']) ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+                <?php if ($appointment['status'] == 0 && empty($pacients)): ?>
+                    <div class="alert alert-warning mt-2">Нет пациентов с направлением к этому врачу</div>
+                <?php endif; ?>
+            </div>
         <?php endif; ?>
         
         <div class="mb-3">
@@ -106,11 +139,26 @@ $sql_history="SELECT complaints, name_of_disease, 	symptoms, 	treatment_recommen
         
         <p><strong>Отделение:</strong> <?= htmlspecialchars($appointment['name_department']) ?></p>  
         <p><strong>Поликлиника:</strong> <?= htmlspecialchars($appointment['name_polyclinic']) ?></p>
+        <input type="hidden" name="existing_patient_id" value="<?= htmlspecialchars($appointment['id_patient']) ?>">
         <p><strong>Адрес:</strong> <?= htmlspecialchars($appointment['address']) ?></p>
         <p><strong>ID направление:</strong> <?= htmlspecialchars($appointment['id_referral']) ?></p>
         
         <?php if ($appointment['id_patient'] != 0 && $appointment['id_medical_history'] != 0): ?>
             <h5>Результаты приема</h5>
+            <div class="mb-3">
+                <label class="form-label">Область медицины</label>
+                <select class="form-select" name="id_field" required>
+                    <option value="">Выберите область</option>
+                    <?php 
+                    $fields = $conn->query("SELECT id_field, name_of_field FROM field_of_medicine");
+                    while ($field = $fields->fetch_assoc()): ?>
+                        <option value="<?= $field['id_field'] ?>" <?= ($field['id_field'] == ($history_data['id_field'] ?? 0)) ? 'selected' : '' ?>>
+                            <?= htmlspecialchars($field['name_of_field']) ?>
+                        </option>
+                    <?php endwhile; ?>
+                </select>
+            </div>
+
             <div class="mb-3">
                 <label class="form-label">Жалобы</label>
                 <textarea class="form-control" id="complaintsAppointment" name="complaintsAppointment" rows="2"><?= htmlspecialchars($history_data['complaints'] ?? '') ?></textarea>
@@ -120,7 +168,7 @@ $sql_history="SELECT complaints, name_of_disease, 	symptoms, 	treatment_recommen
                 <label class="form-label">Симптомы</label>
                 <input type="text" class="form-control" id="symptomsAppointment" name="symptomsAppointment" value="<?=htmlspecialchars($history_data['symptoms'] ?? '')?>">
             </div>
-            
+            <input type="hidden" name="id_medical_history" value="<?= htmlspecialchars($appointment['id_medical_history'] ?? 0) ?>">
             <div class="mb-3">
                 <label class="form-label">Диагноз</label>
                 <input type="text" class="form-control" id="diagnosisAppointment" name="diagnosisAppointment" value="<?=htmlspecialchars($history_data['name_of_disease'] ?? '')?>">
@@ -165,74 +213,3 @@ $sql_history="SELECT complaints, name_of_disease, 	symptoms, 	treatment_recommen
         </div>
     </form>
 </div>
-
-<script>
-function updateAppointment(id) {
-    const formData = new FormData(document.getElementById('editAppointmentForm'));
-    
-    fetch('update_appointment.php', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            alert('Изменения сохранены');
-            location.reload();
-        } else {
-            alert('Ошибка: ' + data.message);
-        }
-    })
-    .catch(error => {
-        alert('Ошибка сети: ' + error);
-    });
-}
-
-function cancelAppointment(id) {
-    if (confirm('Вы действительно хотите отменить эту запись?')) {
-        fetch('cancel_appointment.php', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ id_appointment: id })
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                alert('Запись отменена');
-                location.reload();
-            } else {
-                alert('Ошибка: ' + data.message);
-            }
-        })
-        .catch(error => {
-            alert('Ошибка сети: ' + error);
-        });
-    }
-}
-
-function confirmAppointment(id) {
-    if (confirm('Подтвердить запись и создать медицинскую историю?')) {
-        fetch('confirm_appointment.php', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ id_appointment: id })
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                alert('Запись подтверждена, медицинская история создана');
-                location.reload();
-            } else {
-                alert('Ошибка: ' + data.message);
-            }
-        })
-        .catch(error => {
-            alert('Ошибка сети: ' + error);
-        });
-    }
-}
-</script>

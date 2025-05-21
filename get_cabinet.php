@@ -1,12 +1,25 @@
 <?php
 include 'bd.php'; 
 
-$department_id = $_GET['id_department']?? null;
+function callProcedure($conn, $sql) {
+    $data = [];
+    if ($conn->multi_query($sql)) {
+        do {
+            if ($result = $conn->store_result()) {
+                $data = $result->fetch_all(MYSQLI_ASSOC);
+                $result->free();
+            }
+        } while ($conn->more_results() && $conn->next_result());
+    } else {
+        error_log("MySQL error: " . $conn->error);
+    }
+    return $data;
+}
 
-$sql = "SELECT id_cabinet, number_of_cabinet FROM cabinet WHERE id_department = " . intval($department_id);
-$sql_result = $conn->query($sql);
-$cabinets = $sql_result ? $sql_result->fetch_all(MYSQLI_ASSOC) : [];
+$department_id = isset($_GET['id_department']) ? $_GET['id_department'] : 0;
+$department_id = is_numeric($department_id) ? $department_id : 0;
 
+$cabinets = callProcedure($conn, "CALL cabinet_philter($department_id)");
 
 header('Content-Type: application/json');
 echo json_encode($cabinets);

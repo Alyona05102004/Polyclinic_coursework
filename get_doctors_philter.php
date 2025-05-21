@@ -1,15 +1,26 @@
 <?php
 include 'bd.php'; 
 
-// Получаем id_department из GET-параметров
-$department_id = isset($_GET['id_department']) ? $_GET['id_department'] : null;
-if ($department_id == "all" || $department_id === null) {
-    $sql_philter_doctor = "SELECT staff.id_doctor, staff.full_name FROM staff";
-} else {
-    $sql_philter_doctor = "SELECT staff.id_doctor, staff.full_name, staff.post FROM staff WHERE staff.id_department = " . intval($department_id);
+function callProcedure($conn, $sql) {
+    $data = [];
+    if ($conn->multi_query($sql)) {
+        do {
+            if ($result = $conn->store_result()) {
+                $data = $result->fetch_all(MYSQLI_ASSOC);
+                $result->free();
+            }
+        } while ($conn->more_results() && $conn->next_result());
+    } else {
+        error_log("MySQL error: " . $conn->error);
+    }
+    return $data;
 }
-$sql_philter_doctor_result = $conn->query($sql_philter_doctor);
-$doctors = $sql_philter_doctor_result ? $sql_philter_doctor_result->fetch_all(MYSQLI_ASSOC) : [];
+
+$department_id = isset($_GET['id_department']) ? $_GET['id_department'] : 0;
+$department_id = is_numeric($department_id) ? $department_id : 0;
+
+// Вызываем процедуру с правильным параметром
+$doctors = callProcedure($conn, "CALL doctor_philter($department_id)");
 
 header('Content-Type: application/json');
 echo json_encode($doctors);
