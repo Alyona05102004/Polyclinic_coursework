@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Хост: 127.0.0.1:3306
--- Время создания: Май 03 2025 г., 11:11
+-- Время создания: Май 23 2025 г., 21:20
 -- Версия сервера: 5.6.51
 -- Версия PHP: 7.2.34
 
@@ -21,6 +21,419 @@ SET time_zone = "+00:00";
 -- База данных: `polyclinic`
 --
 
+DELIMITER $$
+--
+-- Процедуры
+--
+CREATE DEFINER=`root`@`%` PROCEDURE `cabinet_philter` (IN `department_id` INT)   BEGIN
+    IF department_id IS NOT NULL THEN
+        SET @sql_cabinet = CONCAT('SELECT id_cabinet, number_of_cabinet FROM cabinet WHERE id_department = ', department_id);
+    ELSE
+        SET @sql_cabinet = 'SELECT id_cabinet, number_of_cabinet FROM cabinet'; 
+    END IF;
+
+
+    PREPARE stmt FROM @sql_cabinet;
+    EXECUTE stmt;
+    DEALLOCATE PREPARE stmt;
+END$$
+
+CREATE DEFINER=`root`@`%` PROCEDURE `department_philter` (IN `polyclinic_id` INT)   BEGIN
+    IF polyclinic_id = 0 THEN
+        SET @sql_statement = 'SELECT department.id_department, department.name_department FROM department';
+    ELSE
+        SET @sql_statement = CONCAT(
+            'SELECT department.id_department, department.name_department FROM department ',
+            'JOIN connection ON connection.id_department = department.id_department ',
+            'WHERE connection.id_polyclinic = ', polyclinic_id
+        );
+    END IF;
+
+    PREPARE stmt FROM @sql_statement;
+    EXECUTE stmt;
+    DEALLOCATE PREPARE stmt;
+END$$
+
+CREATE DEFINER=`root`@`%` PROCEDURE `doctor_philter` (IN `department_id` INT)   BEGIN
+    IF department_id = 0 THEN
+        SET @sql_doctor = 'SELECT staff.id_doctor, staff.full_name FROM staff';
+    ELSE
+        SET @sql_doctor = CONCAT(
+            'SELECT staff.id_doctor, staff.full_name, staff.post FROM staff WHERE staff.id_department =', department_id
+        );
+    END IF;
+
+    PREPARE stmt FROM @sql_doctor;
+    EXECUTE stmt;
+end$$
+
+CREATE DEFINER=`root`@`%` PROCEDURE `getreports1Table` (IN `city` VARCHAR(255), IN `gender` VARCHAR(10), IN `id_field` INT, IN `age_start` INT, IN `age_end` INT, IN `date_start` DATE, IN `date_end` DATE, IN `min_kol` INT, IN `top_n` INT, IN `group_n` INT)   BEGIN 
+	SET @age_start=age_start;
+    SET @age_end = age_end;
+    SET @podzapros = 'SELECT disease.name_of_disease, COUNT(appointment.id_appointment) as disease_kol, 
+                      YEAR(appointment.date) as appointment_year, MONTH(appointment.date) as appointment_month,
+                      FLOOR(DATEDIFF(CURDATE(), information_about_patient.birthday) / 365.25) AS age
+                      FROM disease
+                      JOIN medical_history ON medical_history.id_disease = disease.id_disease
+                      JOIN appointment ON appointment.id_medical_history = medical_history.id_history
+                      JOIN information_about_patient ON appointment.id_patient = information_about_patient.id_patient
+                      JOIN field_of_medicine ON disease.id_field = field_of_medicine.id_field
+                      WHERE FLOOR(DATEDIFF(CURDATE(), information_about_patient.birthday) / 365.25) BETWEEN @age_start AND @age_end';
+    
+    IF city IS NOT NULL AND city != 'all' THEN
+        SET @podzapros = CONCAT(@podzapros, ' AND information_about_patient.address LIKE "%', city, '%"'); 
+    END IF;
+    
+    IF gender IS NOT NULL AND gender != 'all' THEN
+        SET @podzapros = CONCAT(@podzapros, ' AND information_about_patient.gender = "', gender, '"'); 
+    END IF;
+    
+    IF id_field IS NOT NULL AND id_field != 0 THEN
+        SET @podzapros = CONCAT(@podzapros, ' AND disease.id_field = ', id_field); 
+    END IF;
+    
+    IF date_start IS NOT NULL THEN
+        SET @podzapros = CONCAT(@podzapros, ' AND appointment.date >= "', date_start, '"'); 
+    END IF;
+    
+    IF date_end IS NOT NULL THEN
+        SET @podzapros = CONCAT(@podzapros, ' AND appointment.date <= "', date_end, '"'); 
+    END IF;
+    
+    SET @podzapros = CONCAT(@podzapros, ' GROUP BY 
+                          disease.name_of_disease,
+                          appointment_year,
+                          appointment_month');
+    
+    IF min_kol IS NOT NULL AND min_kol != 0 THEN
+        SET @podzapros = CONCAT(@podzapros, ' HAVING disease_kol >= ', min_kol);
+    END IF;
+    
+    SET @sql = CONCAT('SELECT name_of_disease, SUM(disease_kol) AS total_appointments, appointment_year, 
+                      (SUM(disease_kol) / (SELECT SUM(disease_kol) FROM (', @podzapros, ') AS t)) * 100 AS procent 
+                      FROM (', @podzapros, ') AS PODZAPROS');
+    
+    IF group_n IS NOT NULL AND group_n = 1 THEN
+        IF top_n IS NOT NULL AND top_n != 0 THEN
+            SET @sql = CONCAT(@sql, ' GROUP BY name_of_disease, appointment_year
+                          ORDER BY total_appointments DESC
+                          LIMIT ', top_n);
+        ELSE
+            SET @sql = CONCAT(@sql, '   GROUP BY name_of_disease, appointment_year
+                          ORDER BY total_appointments DESC');
+        END IF;
+    ELSEIF group_n IS NOT NULL AND group_n = 2 THEN
+        IF top_n IS NOT NULL AND top_n != 0 THEN
+            SET @sql = CONCAT(@sql, ' AND appointment_year=NULL GROUP BY name_of_disease, appointment_year, appointment_month
+                          ORDER BY total_appointments DESC
+                          LIMIT ', top_n);
+        ELSE 
+            SET @sql = CONCAT(@sql, ' AND appointment_year=NULL GROUP BY name_of_disease, appointment_year, appointment_month
+                          ORDER BY total_appointments DESC');
+        END IF;
+    ELSE
+    IF top_n IS NOT NULL AND top_n != 0 THEN
+        SET @sql = CONCAT(@sql, ' AND appointment_year=NULL AND appointment_month=0 GROUP BY name_of_disease
+                      ORDER BY total_appointments DESC
+                      LIMIT ', top_n);
+    ELSE 
+        SET @sql = CONCAT(@sql, ' AND 
+appointment_year=NULL AND appointment_month=0 GROUP BY name_of_disease
+                      ORDER BY total_appointments DESC');
+    END IF;
+END IF;
+    
+    PREPARE stmt FROM @sql;
+    EXECUTE stmt;
+    DEALLOCATE PREPARE stmt;  
+END$$
+
+CREATE DEFINER=`root`@`%` PROCEDURE `getreportsTable` (IN `city` VARCHAR(255), IN `gender` VARCHAR(255), IN `id_field` INT, IN `age_partition` INT, IN `date_start` DATE, IN `date_end` DATE, IN `min_kol` INT, IN `group_1` INT, IN `group_2` INT, IN `group_3` INT)   BEGIN 
+	SET @age_partition=age_partition;
+    SET @podzapros = CONCAT(
+    'SELECT CONCAT(FLOOR(DATEDIFF(CURDATE(), information_about_patient.birthday) / 365.25 / ', @age_partition, ') * ', @age_partition, ', ''-'', FLOOR(DATEDIFF(CURDATE(), information_about_patient.birthday) / 365.25 / ', @age_partition, ') * ', @age_partition, ' + ', @age_partition, ' - 1) AS age_group,
+    disease.name_of_disease,
+    COUNT(appointment.id_appointment) AS disease_kol, YEAR(appointment.date) as appointment_year, MONTH(appointment.date) as appointment_month,
+   	information_about_patient.gender AS gender,
+    YEAR(information_about_patient.birthday) AS birth_year,
+    TRIM(
+            SUBSTRING(
+                information_about_patient.address,
+                LOCATE(''г.'', information_about_patient.address) + 2,
+                CASE
+                    WHEN LOCATE('','', information_about_patient.address) > 0 
+                    THEN LOCATE('','', information_about_patient.address) - LOCATE(''г.'', information_about_patient.address) - 2
+                    ELSE LENGTH(information_about_patient.address) - LOCATE(''г.'', information_about_patient.address) - 1
+                END
+            )
+        ) AS city
+    FROM disease
+    JOIN medical_history ON medical_history.id_disease = disease.id_disease
+    JOIN appointment ON appointment.id_medical_history = medical_history.id_history
+    JOIN information_about_patient ON appointment.id_patient = information_about_patient.id_patient
+    JOIN field_of_medicine ON disease.id_field = field_of_medicine.id_field
+    WHERE 1=1'
+);
+    
+    IF city IS NOT NULL AND city != 'all' THEN
+        SET @podzapros = CONCAT(@podzapros, ' AND information_about_patient.address LIKE "%', city, '%"'); 
+    END IF;
+    
+    IF gender IS NOT NULL AND gender != 'all' THEN
+        SET @podzapros = CONCAT(@podzapros, ' AND information_about_patient.gender = "', gender, '"'); 
+    END IF;
+    
+    IF id_field IS NOT NULL AND id_field != 0 THEN
+        SET @podzapros = CONCAT(@podzapros, ' AND disease.id_field = ', id_field); 
+    END IF;
+    
+    IF date_start IS NOT NULL THEN
+        SET @podzapros = CONCAT(@podzapros, ' AND (appointment.date >= "', date_start, '" OR appointment.date LIKE "%', date_start, '%")'); 
+    END IF;
+    
+    IF date_end IS NOT NULL THEN
+        SET @podzapros = CONCAT(@podzapros, ' AND (appointment.date <= "', date_end, '" OR appointment.date LIKE "%', date_end, '%")'); 
+    END IF;
+    
+    SET @podzapros = CONCAT(@podzapros, ' GROUP BY age_group, disease.name_of_disease');
+    
+    IF min_kol IS NOT NULL AND min_kol != 0 THEN
+        SET @podzapros = CONCAT(@podzapros, ' HAVING disease_kol >= ', min_kol);
+    END IF;
+    
+    SET @sql = CONCAT('SELECT age_group, name_of_disease, SUM(disease_kol) AS total_appointments, appointment_year, 
+                      (SUM(disease_kol) / (SELECT SUM(disease_kol) FROM (', @podzapros, ') AS t)) * 100 AS procent, gender, city, birth_year
+                      FROM (', @podzapros, ') AS PODZAPROS');
+    
+    IF group_1 IS NOT NULL AND group_1 = 1 THEN
+    	SET @sql = CONCAT(@sql, ' GROUP BY name_of_disease, appointment_year');
+    ELSEIF group_1 IS NOT NULL AND group_1 = 2 THEN
+    	SET @sql = CONCAT(@sql, ' GROUP BY name_of_disease, appointment_month');    
+    ELSEIF group_1 IS NOT NULL AND group_1 = 3 THEN
+    	SET @sql = CONCAT(@sql, ' GROUP BY name_of_disease, city');
+    ELSEIF group_1 IS NOT NULL AND group_1 = 4 THEN
+    	SET @sql = CONCAT(@sql, ' GROUP BY name_of_disease, gender');
+    ELSEIF group_1 IS NOT NULL AND group_1 = 5 THEN
+    	SET @sql = CONCAT(@sql, ' GROUP BY name_of_disease, birth_year');
+    ELSE SET @sql = CONCAT(@sql, ' GROUP BY name_of_disease');
+    END IF;
+    
+    
+    IF group_1 IS NOT NULL AND group_1 != 0 THEN
+        IF group_2 IS NOT NULL AND group_2 = 1 THEN
+            SET @sql = CONCAT(@sql, ', appointment_year');
+        ELSEIF group_2 IS NOT NULL AND group_2 = 2 THEN
+            SET @sql = CONCAT(@sql, ', appointment_month');    
+        ELSEIF group_2 IS NOT NULL AND group_2 = 3 THEN
+            SET @sql = CONCAT(@sql, ', city');
+        ELSEIF group_2 IS NOT NULL AND group_2 = 4 THEN
+            SET @sql = CONCAT(@sql, ', gender');
+        ELSEIF group_2 IS NOT NULL AND group_2 = 5 THEN
+            SET @sql = CONCAT(@sql, ', birth_year');
+        END IF;
+    END IF;
+    
+    IF group_1 IS NOT NULL AND group_1 != 0 THEN
+    	IF group_2 IS NOT NULL AND group_2 != 0 THEN
+            IF group_3 IS NOT NULL AND group_3 = 1 THEN
+                SET @sql = CONCAT(@sql, ', appointment_year');
+            ELSEIF group_3 IS NOT NULL AND group_3 = 2 THEN
+                SET @sql = CONCAT(@sql, ', appointment_month');    
+            ELSEIF group_3 IS NOT NULL AND group_3 = 3 THEN
+               SET @sql = CONCAT(@sql, ' city');
+            ELSEIF group_3 IS NOT NULL AND group_3 = 4 THEN
+                SET @sql = CONCAT(@sql, ', gender');
+            ELSEIF group_3 IS NOT NULL AND group_3 = 5 THEN
+                SET @sql = CONCAT(@sql, ', birth_year');
+            END IF;
+        END IF;
+    END IF;   
+    SET @sql = CONCAT(@sql, ', age_group ORDER BY total_appointments DESC');
+    PREPARE stmt FROM @sql;
+    EXECUTE stmt;
+    DEALLOCATE PREPARE stmt;  
+END$$
+
+CREATE DEFINER=`root`@`%` PROCEDURE `get_appointments_table` (IN `polyclinic_id` INT, IN `department_id` INT, IN `letters_range` VARCHAR(255), IN `doctor_id` INT, IN `date_start` DATE, IN `date_end` DATE, IN `status` VARCHAR(90))   BEGIN
+    SET @sql_appointments = 'SELECT appointment.id_appointment, appointment.date, appointment.id_doctor, staff.full_name as doctorName, staff.post,
+    appointment.id_ranges, operating_ranges.range_start, operating_ranges.range_end, appointment.id_patient, 
+    information_about_patient.full_name as patientName, appointment.id_cabinet, cabinet.number_of_cabinet, appointment.id_referral, 
+    appointment.id_medical_history, department.id_department, department.name_department, info_about_polyclinic.id_polyclinic, 
+    info_about_polyclinic.name_polyclinic, info_about_polyclinic.address
+    FROM appointment
+    LEFT JOIN staff ON staff.id_doctor=appointment.id_doctor
+    JOIN operating_ranges ON operating_ranges.id_ranges=appointment.id_ranges
+    LEFT JOIN information_about_patient ON information_about_patient.id_patient=appointment.id_patient
+    LEFT JOIN cabinet ON cabinet.id_cabinet=appointment.id_cabinet
+    JOIN department ON cabinet.id_department=department.id_department
+    JOIN connection ON connection.id_department=department.id_department
+    JOIN info_about_polyclinic ON info_about_polyclinic.id_polyclinic=connection.id_polyclinic
+    WHERE 1=1';
+
+    IF polyclinic_id IS NOT NULL AND polyclinic_id != 0 THEN
+        SET @sql_appointments = CONCAT(@sql_appointments, ' AND info_about_polyclinic.id_polyclinic = ', polyclinic_id); 
+    END IF;
+    
+    IF department_id IS NOT NULL AND department_id != 0 THEN
+        SET @sql_appointments = CONCAT(@sql_appointments, ' AND department.id_department = ', department_id); 
+    END IF;
+    
+    IF letters_range IS NOT NULL AND letters_range != 'all' THEN
+        SET @letters = SUBSTRING_INDEX(letters_range, '-', 1);
+        SET @first_letter = TRIM(@letters);
+        SET @last_letter = TRIM(SUBSTRING_INDEX(letters_range, '-', -1));
+        SET @sql_appointments = CONCAT(@sql_appointments, ' AND (information_about_patient.full_name BETWEEN "', @first_letter, '" AND "', @last_letter, '" OR information_about_patient.full_name LIKE "', @first_letter, '%" OR information_about_patient.full_name LIKE "', @last_letter, '%")');
+    END IF;
+    
+    IF doctor_id IS NOT NULL AND doctor_id != 0 THEN
+        SET @sql_appointments = CONCAT(@sql_appointments, ' AND appointment.id_doctor = ', doctor_id); 
+    END IF;
+
+    IF date_start IS NOT NULL AND date_end IS NOT NULL AND date_start != NULL AND date_end != NULL THEN
+        SET @sql_appointments = CONCAT(@sql_appointments, ' AND appointment.date BETWEEN "', date_start, '" AND "', date_end, '"'); 
+    END IF;   
+    
+    IF status = 'busy' THEN
+        SET @sql_appointments = CONCAT(@sql_appointments, ' AND appointment.id_doctor != 0 AND appointment.id_patient != 0'); 
+    END IF;
+    IF status = 'free' THEN
+        SET @sql_appointments = CONCAT(@sql_appointments, ' AND (appointment.id_patient IS NULL)  AND appointment.id_doctor != 0'); 
+    END IF;
+    IF status = 'without_doctor' THEN
+        SET @sql_appointments = CONCAT(@sql_appointments, ' AND appointment.id_doctor IS NULL'); 
+    END IF;
+
+    PREPARE stmt FROM @sql_appointments;
+    EXECUTE stmt;
+    DEALLOCATE PREPARE stmt;
+END$$
+
+CREATE DEFINER=`root`@`%` PROCEDURE `get_cities` (IN `table_name` VARCHAR(255))   BEGIN
+    SET @sql = CONCAT('SELECT DISTINCT
+        TRIM(
+            SUBSTRING(
+                address,
+                LOCATE(''г.'', address) + 2,
+                CASE
+                    WHEN LOCATE('','', address) > 0 THEN LOCATE('','', address) - LOCATE(''г.'', address) - 2
+                    ELSE LENGTH(address) - LOCATE(''г.'', address) - 1
+                END
+            )
+        ) AS city
+        FROM ', table_name, '
+        WHERE address LIKE ''г.%'';');
+
+    PREPARE stmt FROM @sql;
+    EXECUTE stmt;
+    DEALLOCATE PREPARE stmt;
+END$$
+
+CREATE DEFINER=`root`@`%` PROCEDURE `get_doctors_table` (IN `polyclinic_id` INT, IN `department_id` INT, IN `letters_range` VARCHAR(255))   BEGIN
+    SET @sql_doctors = 'SELECT staff.id_doctor, staff.full_name, staff.birthday, staff.post, staff.status, staff.address, 
+    staff.phone_number, department.name_department, info_about_polyclinic.name_polyclinic, SUM(
+        CASE 
+            WHEN education.work_experience IS NULL THEN 0 
+            ELSE education.work_experience 
+        END
+     ) as total_exp
+                    FROM staff 
+                    JOIN department ON department.id_department = staff.id_department
+                    JOIN connection ON connection.id_department = department.id_department
+                    JOIN info_about_polyclinic ON info_about_polyclinic.id_polyclinic = connection.id_polyclinic
+                    JOIN connection_education ON connection_education.id_doctor = staff.id_doctor
+                    JOIN education ON connection_education.id_education = education.id_education
+                    WHERE 1=1';
+
+    IF polyclinic_id IS NOT NULL AND polyclinic_id!=0 THEN
+        SET @sql_doctors = CONCAT(@sql_doctors, ' AND info_about_polyclinic.id_polyclinic = ', polyclinic_id); 
+    END IF;
+
+    IF department_id IS NOT NULL AND department_id!=0 THEN
+        SET @sql_doctors = CONCAT(@sql_doctors, ' AND department.id_department = ', department_id); 
+    END IF;
+
+    IF letters_range IS NOT NULL AND letters_range != 'all' THEN
+        SET @letters = SUBSTRING_INDEX(letters_range, '-', 1);
+        SET @first_letter = TRIM(@letters);
+        SET @last_letter = TRIM(SUBSTRING_INDEX(letters_range, '-', -1));
+        SET @sql_doctors = CONCAT(@sql_doctors, " AND (staff.full_name BETWEEN '", @first_letter, "' AND '", @last_letter, "' OR staff.full_name LIKE '", @first_letter, "%' OR staff.full_name LIKE '", @last_letter, "%')");
+    END IF;
+
+    SET @sql_doctors = CONCAT(@sql_doctors, ' GROUP BY staff.id_doctor');
+
+    PREPARE stmt FROM @sql_doctors;
+    EXECUTE stmt;
+    DEALLOCATE PREPARE stmt;
+END$$
+
+CREATE DEFINER=`root`@`%` PROCEDURE `get_patients_table` (IN `birthday_date` DATE, IN `curent_address` VARCHAR(255), IN `letters_range` VARCHAR(255), IN `last_date` DATE, IN `currentGender` VARCHAR(10))   BEGIN
+    SET @sql_patients = 'SELECT DISTINCT information_about_patient.id_patient, information_about_patient.full_name, information_about_patient.birthday, information_about_patient.policy_number, information_about_patient.address, information_about_patient.gender 
+    FROM `information_about_patient` 
+    WHERE 1=1';
+
+    IF birthday_date IS NOT NULL AND birthday_date != NULL THEN
+        SET @sql_patients = CONCAT(@sql_patients, ' AND information_about_patient.birthday = "', birthday_date, '"'); 
+    END IF;
+
+    IF curent_address IS NOT NULL AND curent_address != 'all' THEN
+        SET @normalized_address = curent_address; -- Нормализация должна быть выполнена в PHP
+        SET @sql_patients = CONCAT(@sql_patients, ' AND (information_about_patient.address LIKE "%', @normalized_address, '%" 
+                          OR information_about_patient.address LIKE "%ул. ', @normalized_address, '%"
+                          OR information_about_patient.address LIKE "%улица ', @normalized_address, '%")'); 
+    END IF;
+
+    IF last_date IS NOT NULL AND last_date != NULL THEN
+        SET @sql_patients = CONCAT(@sql_patients, ' AND EXISTS (
+            SELECT 1 FROM appointment 
+            WHERE appointment.id_patient = information_about_patient.id_patient
+            AND appointment.date = "', last_date, '")'); 
+    END IF;
+
+    IF currentGender IS NOT NULL AND currentGender != 'all' THEN
+        SET @sql_patients = CONCAT(@sql_patients, ' AND information_about_patient.gender = "', currentGender, '"'); 
+    END IF;
+
+    IF letters_range IS NOT NULL AND letters_range != 'all' THEN
+        SET @letters = SUBSTRING_INDEX(letters_range, '-', 1);
+        SET @first_letter = TRIM(@letters);
+        SET @last_letter = TRIM(SUBSTRING_INDEX(letters_range, '-', -1));
+        SET @sql_patients = CONCAT(@sql_patients, ' AND (information_about_patient.full_name BETWEEN "', @first_letter, '" AND "', @last_letter, '" OR information_about_patient.full_name LIKE "', @first_letter, '%" OR information_about_patient.full_name LIKE "', @last_letter, '%")');
+    END IF;
+
+    SET @sql_patients = CONCAT(@sql_patients, ' GROUP BY information_about_patient.id_patient');
+
+    PREPARE stmt FROM @sql_patients;
+    EXECUTE stmt;
+    DEALLOCATE PREPARE stmt;
+END$$
+
+CREATE DEFINER=`root`@`%` PROCEDURE `get_street` (IN `table_name` VARCHAR(255))   BEGIN
+    SET @sql = CONCAT('SELECT DISTINCT
+    TRIM(
+        SUBSTRING(
+            address,
+            LOCATE(\",\", address) + 1,
+            CASE
+                WHEN LOCATE(\", д.\", address) > 0 
+                    THEN LOCATE(\", д.\", address) - LOCATE(\",\", address) - 1
+                ELSE LENGTH(address) - LOCATE(\",\", address)
+            END
+        )
+    ) AS street
+    FROM `', table_name, '`
+    WHERE address LIKE \"г.%\" AND address LIKE \"%,%\"');
+
+    PREPARE stmt FROM @sql;
+    EXECUTE stmt;
+    DEALLOCATE PREPARE stmt;
+END$$
+
+CREATE DEFINER=`root`@`%` PROCEDURE `polyclinic_philter` ()  COMMENT 'Процедура для вывода всех поликлиник' BEGIN
+	SELECT id_polyclinic, name_polyclinic FROM info_about_polyclinic;
+END$$
+
+DELIMITER ;
+
 -- --------------------------------------------------------
 
 --
@@ -30,12 +443,12 @@ SET time_zone = "+00:00";
 CREATE TABLE `appointment` (
   `id_appointment` int(11) NOT NULL,
   `date` date NOT NULL,
-  `id_doctor` int(11) NOT NULL,
+  `id_doctor` int(11) DEFAULT NULL,
   `id_ranges` int(11) NOT NULL,
-  `id_patient` int(11) NOT NULL,
+  `id_patient` int(11) DEFAULT NULL,
   `id_cabinet` int(11) NOT NULL,
   `id_referral` int(11) DEFAULT NULL,
-  `id_medical_history` int(11) NOT NULL
+  `id_medical_history` int(11) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
@@ -62,7 +475,255 @@ INSERT INTO `appointment` (`id_appointment`, `date`, `id_doctor`, `id_ranges`, `
 (17, '2023-10-17', 30, 23, 88, 18, NULL, 17),
 (18, '2023-10-18', 32, 18, 84, 20, NULL, 18),
 (19, '2023-10-19', 2, 13, 79, 2, NULL, 19),
-(20, '2023-10-20', 6, 37, 74, 4, NULL, 20);
+(20, '2023-10-20', 6, 37, 74, 4, NULL, 20),
+(50, '2025-05-26', 9, 49, 68, 5, NULL, NULL),
+(51, '2025-05-26', 9, 50, NULL, 5, NULL, NULL),
+(52, '2025-05-26', 9, 51, NULL, 5, NULL, NULL),
+(53, '2025-05-26', 9, 52, NULL, 5, NULL, NULL),
+(54, '2025-05-27', 9, 49, NULL, 5, NULL, NULL),
+(55, '2025-05-27', 9, 50, NULL, 5, NULL, NULL),
+(56, '2025-05-27', 9, 51, NULL, 5, NULL, NULL),
+(57, '2025-05-27', 9, 52, NULL, 5, NULL, NULL),
+(58, '2025-05-28', 9, 49, NULL, 5, NULL, NULL),
+(59, '2025-05-28', 9, 50, NULL, 5, NULL, NULL),
+(60, '2025-05-28', 9, 51, NULL, 5, NULL, NULL),
+(61, '2025-05-28', 9, 52, NULL, 5, NULL, NULL),
+(62, '2025-05-29', 9, 49, NULL, 5, NULL, NULL),
+(63, '2025-05-29', 9, 50, NULL, 5, NULL, NULL),
+(64, '2025-05-29', 9, 51, NULL, 5, NULL, NULL),
+(65, '2025-05-29', 9, 52, NULL, 5, NULL, NULL),
+(66, '2025-05-30', 9, 49, NULL, 5, NULL, NULL),
+(67, '2025-05-30', 9, 50, NULL, 5, NULL, NULL),
+(68, '2025-05-30', 9, 51, NULL, 5, NULL, NULL),
+(69, '2025-05-30', 9, 52, NULL, 5, NULL, NULL),
+(70, '2025-05-31', 9, 50, NULL, 5, NULL, NULL),
+(71, '2025-05-31', 9, 51, NULL, 5, NULL, NULL),
+(72, '2025-05-31', 9, 52, NULL, 5, NULL, NULL),
+(73, '2025-05-26', 23, 1, NULL, 13, NULL, NULL),
+(74, '2025-05-26', 23, 2, NULL, 13, NULL, NULL),
+(75, '2025-05-26', 23, 3, NULL, 13, NULL, NULL),
+(76, '2025-05-26', 23, 4, NULL, 13, NULL, NULL),
+(77, '2025-05-26', 23, 5, NULL, 13, NULL, NULL),
+(78, '2025-05-26', 23, 6, NULL, 13, NULL, NULL),
+(79, '2025-05-26', 23, 7, NULL, 13, NULL, NULL),
+(80, '2025-05-26', 23, 8, NULL, 13, NULL, NULL),
+(81, '2025-05-26', 23, 9, NULL, 13, NULL, NULL),
+(82, '2025-05-26', 23, 10, NULL, 13, NULL, NULL),
+(83, '2025-05-26', 23, 11, NULL, 13, NULL, NULL),
+(84, '2025-05-26', 23, 12, NULL, 13, NULL, NULL),
+(85, '2025-05-26', 23, 13, NULL, 13, NULL, NULL),
+(86, '2025-05-26', 23, 14, NULL, 13, NULL, NULL),
+(87, '2025-05-26', 23, 15, NULL, 13, NULL, NULL),
+(88, '2025-05-26', 23, 16, NULL, 13, NULL, NULL),
+(89, '2025-05-27', 23, 1, NULL, 13, NULL, NULL),
+(90, '2025-05-27', 23, 2, NULL, 13, NULL, NULL),
+(91, '2025-05-27', 23, 3, NULL, 13, NULL, NULL),
+(92, '2025-05-27', 23, 4, NULL, 13, NULL, NULL),
+(93, '2025-05-27', 23, 5, NULL, 13, NULL, NULL),
+(94, '2025-05-27', 23, 6, NULL, 13, NULL, NULL),
+(95, '2025-05-27', 23, 7, NULL, 13, NULL, NULL),
+(96, '2025-05-27', 23, 8, NULL, 13, NULL, NULL),
+(97, '2025-05-27', 23, 9, NULL, 13, NULL, NULL),
+(98, '2025-05-27', 23, 10, NULL, 13, NULL, NULL),
+(99, '2025-05-27', 23, 11, NULL, 13, NULL, NULL),
+(100, '2025-05-27', 23, 12, NULL, 13, NULL, NULL),
+(101, '2025-05-27', 23, 13, NULL, 13, NULL, NULL),
+(102, '2025-05-27', 23, 14, NULL, 13, NULL, NULL),
+(103, '2025-05-27', 23, 15, NULL, 13, NULL, NULL),
+(104, '2025-05-27', 23, 16, NULL, 13, NULL, NULL),
+(105, '2025-05-28', 23, 1, NULL, 13, NULL, NULL),
+(106, '2025-05-28', 23, 2, NULL, 13, NULL, NULL),
+(107, '2025-05-28', 23, 3, NULL, 13, NULL, NULL),
+(108, '2025-05-28', 23, 4, NULL, 13, NULL, NULL),
+(109, '2025-05-28', 23, 5, NULL, 13, NULL, NULL),
+(110, '2025-05-28', 23, 6, NULL, 13, NULL, NULL),
+(111, '2025-05-28', 23, 7, NULL, 13, NULL, NULL),
+(112, '2025-05-28', 23, 8, NULL, 13, NULL, NULL),
+(113, '2025-05-28', 23, 9, NULL, 13, NULL, NULL),
+(114, '2025-05-28', 23, 10, NULL, 13, NULL, NULL),
+(115, '2025-05-28', 23, 11, NULL, 13, NULL, NULL),
+(116, '2025-05-28', 23, 12, NULL, 13, NULL, NULL),
+(117, '2025-05-28', 23, 13, NULL, 13, NULL, NULL),
+(118, '2025-05-28', 23, 14, NULL, 13, NULL, NULL),
+(119, '2025-05-28', 23, 15, NULL, 13, NULL, NULL),
+(120, '2025-05-28', 23, 16, NULL, 13, NULL, NULL),
+(121, '2025-05-29', 23, 1, NULL, 13, NULL, NULL),
+(122, '2025-05-29', 23, 2, NULL, 13, NULL, NULL),
+(123, '2025-05-29', 23, 3, NULL, 13, NULL, NULL),
+(124, '2025-05-29', 23, 4, NULL, 13, NULL, NULL),
+(125, '2025-05-29', 23, 5, NULL, 13, NULL, NULL),
+(126, '2025-05-29', 23, 6, NULL, 13, NULL, NULL),
+(127, '2025-05-29', 23, 7, NULL, 13, NULL, NULL),
+(128, '2025-05-29', 23, 8, NULL, 13, NULL, NULL),
+(129, '2025-05-29', 23, 9, NULL, 13, NULL, NULL),
+(130, '2025-05-29', 23, 10, NULL, 13, NULL, NULL),
+(131, '2025-05-29', 23, 11, NULL, 13, NULL, NULL),
+(132, '2025-05-29', 23, 12, NULL, 13, NULL, NULL),
+(133, '2025-05-29', 23, 13, NULL, 13, NULL, NULL),
+(134, '2025-05-29', 23, 14, NULL, 13, NULL, NULL),
+(135, '2025-05-29', 23, 15, NULL, 13, NULL, NULL),
+(136, '2025-05-29', 23, 16, NULL, 13, NULL, NULL),
+(137, '2025-05-30', 23, 1, NULL, 13, NULL, NULL),
+(138, '2025-05-30', 23, 2, NULL, 13, NULL, NULL),
+(139, '2025-05-30', 23, 3, NULL, 13, NULL, NULL),
+(140, '2025-05-30', 23, 4, NULL, 13, NULL, NULL),
+(141, '2025-05-30', 23, 5, NULL, 13, NULL, NULL),
+(142, '2025-05-30', 23, 6, NULL, 13, NULL, NULL),
+(143, '2025-05-30', 23, 7, NULL, 13, NULL, NULL),
+(144, '2025-05-30', 23, 8, NULL, 13, NULL, NULL),
+(145, '2025-05-30', 23, 9, NULL, 13, NULL, NULL),
+(146, '2025-05-30', 23, 10, NULL, 13, NULL, NULL),
+(147, '2025-05-30', 23, 11, NULL, 13, NULL, NULL),
+(148, '2025-05-30', 23, 12, NULL, 13, NULL, NULL),
+(149, '2025-05-30', 23, 13, NULL, 13, NULL, NULL),
+(150, '2025-05-30', 23, 14, NULL, 13, NULL, NULL),
+(151, '2025-05-30', 23, 15, NULL, 13, NULL, NULL),
+(152, '2025-05-30', 23, 16, NULL, 13, NULL, NULL),
+(153, '2025-05-31', 23, 5, NULL, 13, NULL, NULL),
+(154, '2025-05-31', 23, 6, NULL, 13, NULL, NULL),
+(155, '2025-05-31', 23, 7, NULL, 13, NULL, NULL),
+(156, '2025-05-31', 23, 8, NULL, 13, NULL, NULL),
+(157, '2025-05-31', 23, 9, NULL, 13, NULL, NULL),
+(158, '2025-05-31', 23, 10, NULL, 13, NULL, NULL),
+(159, '2025-05-31', 23, 11, NULL, 13, NULL, NULL),
+(160, '2025-05-31', 23, 12, NULL, 13, NULL, NULL),
+(161, '2025-05-31', 23, 13, NULL, 13, NULL, NULL),
+(162, '2025-05-31', 23, 14, NULL, 13, NULL, NULL),
+(163, '2025-05-31', 23, 15, NULL, 13, NULL, NULL),
+(164, '2025-05-31', 23, 16, NULL, 13, NULL, NULL),
+(165, '2025-06-02', 29, 53, 90, 17, NULL, NULL),
+(166, '2025-06-02', 29, 54, NULL, 17, NULL, NULL),
+(167, '2025-06-02', 29, 55, NULL, 17, NULL, NULL),
+(168, '2025-06-02', 29, 56, 87, 17, NULL, NULL),
+(169, '2025-06-02', 29, 57, 67, 17, NULL, NULL),
+(170, '2025-06-02', 29, 58, NULL, 17, NULL, NULL),
+(171, '2025-06-02', 29, 59, NULL, 17, NULL, NULL),
+(172, '2025-06-02', 29, 60, NULL, 17, NULL, NULL),
+(173, '2025-06-03', 29, 53, NULL, 17, NULL, NULL),
+(174, '2025-06-03', 29, 54, NULL, 17, NULL, NULL),
+(175, '2025-06-03', 29, 55, NULL, 17, NULL, NULL),
+(176, '2025-06-03', 29, 56, NULL, 17, NULL, NULL),
+(177, '2025-06-03', 29, 57, NULL, 17, NULL, NULL),
+(178, '2025-06-03', 29, 58, NULL, 17, NULL, NULL),
+(179, '2025-06-03', 29, 59, NULL, 17, NULL, NULL),
+(180, '2025-06-03', 29, 60, 89, 17, NULL, NULL),
+(181, '2025-06-04', 29, 53, NULL, 17, NULL, NULL),
+(182, '2025-06-04', 29, 54, 65, 17, NULL, NULL),
+(183, '2025-06-04', 29, 55, NULL, 17, NULL, NULL),
+(184, '2025-06-04', 29, 56, 71, 17, NULL, NULL),
+(185, '2025-06-04', 29, 57, NULL, 17, NULL, NULL),
+(186, '2025-06-04', 29, 58, NULL, 17, NULL, NULL),
+(187, '2025-06-04', 29, 59, 88, 17, NULL, NULL),
+(188, '2025-06-04', 29, 60, NULL, 17, NULL, NULL),
+(189, '2025-06-05', 29, 53, NULL, 17, NULL, NULL),
+(190, '2025-06-05', 29, 54, NULL, 17, NULL, NULL),
+(191, '2025-06-05', 29, 55, NULL, 17, NULL, NULL),
+(192, '2025-06-05', 29, 56, NULL, 17, NULL, NULL),
+(193, '2025-06-05', 29, 57, NULL, 17, NULL, NULL),
+(194, '2025-06-05', 29, 58, NULL, 17, NULL, NULL),
+(195, '2025-06-05', 29, 59, NULL, 17, NULL, NULL),
+(196, '2025-06-05', 29, 60, NULL, 17, NULL, NULL),
+(197, '2025-06-06', 29, 53, NULL, 17, NULL, NULL),
+(198, '2025-06-06', 29, 54, NULL, 17, NULL, NULL),
+(199, '2025-06-06', 29, 55, NULL, 17, NULL, NULL),
+(200, '2025-06-06', 29, 56, NULL, 17, NULL, NULL),
+(201, '2025-06-06', 29, 57, NULL, 17, NULL, NULL),
+(202, '2025-06-06', 29, 58, NULL, 17, NULL, NULL),
+(203, '2025-06-06', 29, 59, NULL, 17, NULL, NULL),
+(204, '2025-06-06', 29, 60, NULL, 17, NULL, NULL),
+(205, '2025-06-07', 29, 55, NULL, 17, NULL, NULL),
+(206, '2025-06-07', 29, 56, NULL, 17, NULL, NULL),
+(207, '2025-06-07', 29, 57, NULL, 17, NULL, NULL),
+(208, '2025-06-07', 29, 58, NULL, 17, NULL, NULL),
+(209, '2025-06-07', 29, 59, NULL, 17, NULL, NULL),
+(210, '2025-06-07', 29, 60, NULL, 17, NULL, NULL),
+(211, '2025-06-02', 36, 61, NULL, 23, NULL, NULL),
+(212, '2025-06-02', 36, 62, NULL, 23, NULL, NULL),
+(213, '2025-06-02', 36, 63, NULL, 23, NULL, NULL),
+(214, '2025-06-02', 36, 64, NULL, 23, NULL, NULL),
+(215, '2025-06-02', 36, 65, NULL, 23, NULL, NULL),
+(216, '2025-06-02', 36, 66, NULL, 23, NULL, NULL),
+(217, '2025-06-02', 36, 67, NULL, 23, NULL, NULL),
+(218, '2025-06-02', 36, 68, NULL, 23, NULL, NULL),
+(219, '2025-06-03', 36, 61, NULL, 23, NULL, NULL),
+(220, '2025-06-03', 36, 62, NULL, 23, NULL, NULL),
+(221, '2025-06-03', 36, 63, NULL, 23, NULL, NULL),
+(222, '2025-06-03', 36, 64, NULL, 23, NULL, NULL),
+(223, '2025-06-03', 36, 65, NULL, 23, NULL, NULL),
+(224, '2025-06-03', 36, 66, NULL, 23, NULL, NULL),
+(225, '2025-06-03', 36, 67, NULL, 23, NULL, NULL),
+(226, '2025-06-03', 36, 68, NULL, 23, NULL, NULL),
+(227, '2025-06-04', 36, 61, NULL, 23, NULL, NULL),
+(228, '2025-06-04', 36, 62, NULL, 23, NULL, NULL),
+(229, '2025-06-04', 36, 63, NULL, 23, NULL, NULL),
+(230, '2025-06-04', 36, 64, NULL, 23, NULL, NULL),
+(231, '2025-06-04', 36, 65, NULL, 23, NULL, NULL),
+(232, '2025-06-04', 36, 66, NULL, 23, NULL, NULL),
+(233, '2025-06-04', 36, 67, NULL, 23, NULL, NULL),
+(234, '2025-06-04', 36, 68, NULL, 23, NULL, NULL),
+(235, '2025-06-05', 36, 61, NULL, 23, NULL, NULL),
+(236, '2025-06-05', 36, 62, NULL, 23, NULL, NULL),
+(237, '2025-06-05', 36, 63, NULL, 23, NULL, NULL),
+(238, '2025-06-05', 36, 64, NULL, 23, NULL, NULL),
+(239, '2025-06-05', 36, 65, NULL, 23, NULL, NULL),
+(240, '2025-06-05', 36, 66, NULL, 23, NULL, NULL),
+(241, '2025-06-05', 36, 67, NULL, 23, NULL, NULL),
+(242, '2025-06-05', 36, 68, NULL, 23, NULL, NULL),
+(243, '2025-06-06', 36, 61, NULL, 23, NULL, NULL),
+(244, '2025-06-06', 36, 62, NULL, 23, NULL, NULL),
+(245, '2025-06-06', 36, 63, NULL, 23, NULL, NULL),
+(246, '2025-06-06', 36, 64, NULL, 23, NULL, NULL),
+(247, '2025-06-06', 36, 65, NULL, 23, NULL, NULL),
+(248, '2025-06-06', 36, 66, NULL, 23, NULL, NULL),
+(249, '2025-06-06', 36, 67, NULL, 23, NULL, NULL),
+(250, '2025-06-06', 36, 68, NULL, 23, NULL, NULL),
+(251, '2025-06-07', 36, 61, NULL, 23, NULL, NULL),
+(252, '2025-06-07', 36, 62, NULL, 23, NULL, NULL),
+(253, '2025-06-07', 36, 63, NULL, 23, NULL, NULL),
+(254, '2025-06-07', 36, 64, NULL, 23, NULL, NULL),
+(255, '2025-07-01', 44, 69, NULL, 32, NULL, NULL),
+(256, '2025-07-01', 44, 70, NULL, 32, NULL, NULL),
+(257, '2025-07-01', 44, 71, NULL, 32, NULL, NULL),
+(258, '2025-07-01', 44, 72, NULL, 32, NULL, NULL),
+(259, '2025-07-01', 44, 73, NULL, 32, NULL, NULL),
+(260, '2025-07-01', 44, 74, NULL, 32, NULL, NULL),
+(261, '2025-07-02', 44, 69, NULL, 32, NULL, NULL),
+(262, '2025-07-02', 44, 70, NULL, 32, NULL, NULL),
+(263, '2025-07-02', 44, 71, NULL, 32, NULL, NULL),
+(264, '2025-07-02', 44, 72, NULL, 32, NULL, NULL),
+(265, '2025-07-02', 44, 73, NULL, 32, NULL, NULL),
+(266, '2025-07-02', 44, 74, NULL, 32, NULL, NULL),
+(267, '2025-07-03', 44, 69, NULL, 32, NULL, NULL),
+(268, '2025-07-03', 44, 70, NULL, 32, NULL, NULL),
+(269, '2025-07-03', 44, 71, NULL, 32, NULL, NULL),
+(270, '2025-07-03', 44, 72, NULL, 32, NULL, NULL),
+(271, '2025-07-03', 44, 73, NULL, 32, NULL, NULL),
+(272, '2025-07-03', 44, 74, NULL, 32, NULL, NULL),
+(273, '2025-07-04', 44, 69, NULL, 32, NULL, NULL),
+(274, '2025-07-04', 44, 70, NULL, 32, NULL, NULL),
+(275, '2025-07-04', 44, 71, NULL, 32, NULL, NULL),
+(276, '2025-07-04', 44, 72, NULL, 32, NULL, NULL),
+(277, '2025-07-04', 44, 73, NULL, 32, NULL, NULL),
+(278, '2025-07-04', 44, 74, NULL, 32, NULL, NULL),
+(279, '2025-07-07', 44, 69, NULL, 32, NULL, NULL),
+(280, '2025-07-07', 44, 70, NULL, 32, NULL, NULL),
+(281, '2025-07-07', 44, 71, NULL, 32, NULL, NULL),
+(282, '2025-07-07', 44, 72, NULL, 32, NULL, NULL),
+(283, '2025-07-07', 44, 73, NULL, 32, NULL, NULL),
+(284, '2025-07-07', 44, 74, NULL, 32, NULL, NULL),
+(285, '2025-06-02', 7, 75, 60, 3, NULL, NULL),
+(286, '2025-06-02', 7, 76, 74, 3, NULL, NULL),
+(287, '2025-06-02', 7, 77, NULL, 3, NULL, NULL),
+(288, '2025-06-02', 7, 78, NULL, 3, NULL, NULL),
+(289, '2025-06-02', 7, 79, 60, 3, NULL, NULL),
+(290, '2025-05-23', 14, 53, 68, 7, NULL, NULL),
+(291, '2025-05-23', 14, 54, NULL, 7, NULL, NULL),
+(292, '2025-05-23', 14, 55, NULL, 7, NULL, NULL),
+(293, '2025-05-23', 14, 56, NULL, 7, NULL, NULL),
+(294, '2025-05-23', 14, 57, NULL, 7, NULL, NULL),
+(295, '2025-05-23', 14, 58, NULL, 7, NULL, NULL),
+(296, '2025-05-23', 14, 59, NULL, 7, NULL, NULL),
+(297, '2025-05-23', 14, 60, NULL, 7, NULL, NULL);
 
 -- --------------------------------------------------------
 
@@ -258,8 +919,8 @@ INSERT INTO `connection_education` (`id_connection_education`, `id_doctor`, `id_
 (47, 47, 78),
 (48, 48, 79),
 (49, 49, 80),
-(51, 51, 82),
-(53, 5, 84);
+(53, 5, 84),
+(54, 50, 85);
 
 -- --------------------------------------------------------
 
@@ -323,9 +984,9 @@ INSERT INTO `connection_qualif_improve` (`id_connection_qualif_improve`, `id_doc
 (48, 47, 27),
 (49, 48, 28),
 (50, 49, 29),
-(51, 51, 30),
 (54, 5, 32),
-(55, 1, 33);
+(55, 1, 33),
+(56, 50, 34);
 
 -- --------------------------------------------------------
 
@@ -529,7 +1190,8 @@ INSERT INTO `education` (`id_education`, `work_experience`, `type_of_education`,
 (80, 9, 'Высшее', 'Московский медицинский университет', 2009, 2016, 22),
 (82, 1, 'Высшее', 'Московский медицинский университет', 2017, 2023, 18),
 (83, 0, 'Аспирантура', 'Научный центр медицины', 2017, 2020, 1),
-(84, 0, 'Аспирантура', 'Научный медицинский центр', 2018, 2022, 2);
+(84, 5, 'Аспирантура', 'Научный медицинский центр', 2018, 2022, 2),
+(85, 20, 'Высшее', 'Московский медицинский университет', 1998, 2005, 17);
 
 -- --------------------------------------------------------
 
@@ -600,7 +1262,7 @@ CREATE TABLE `information_about_patient` (
 
 INSERT INTO `information_about_patient` (`id_patient`, `full_name`, `birthday`, `policy_number`, `address`, `gender`) VALUES
 (1, 'Иванов Иван Иванович', '1985-03-15', '1234567890123456', 'г. Москва, ул. Ленина, д. 1', 'М'),
-(60, 'Петрова Анна Сергеевна', '1990-07-22', '9877543210987654', 'г. Москва, пр. Невский, д. 5', 'Ж'),
+(60, 'Петрова Анна Васильевна', '1990-07-22', '9877543210987654', 'г. Москва, просп. Невский, д. 5', 'Ж'),
 (61, 'Сидоров Алексей Викторович', '1982-11-30', '4567890234567890', 'г. Москва, ул. Баумана, д. 10', 'М'),
 (62, 'Кузнецова Мария Андреевна', '1995-01-10', '3216549878543210', 'г. Москва, ул. Малышева, д. 15', 'Ж'),
 (63, 'Смирнов Дмитрий Александрович', '1988-05-25', '6543317890123456', 'г. Москва, ул. Красный проспект, д. 20', 'М'),
@@ -628,7 +1290,9 @@ INSERT INTO `information_about_patient` (`id_patient`, `full_name`, `birthday`, 
 (85, 'Терентьев Илья Сергеевич', '1983-05-12', '2589631470123456', 'г. Москва, ул. Пушкина, д. 4', 'М'),
 (86, 'Кузнецова Дарья Александровна', '1990-09-23', '3692587470123456', 'г. Москва, ул. Советская, д. 7', 'Ж'),
 (87, 'Смирнов Роман Валерьевич', '1987-12-30', '1597532580123456', 'г. Москва, ул. Гагарина, д. 10', 'М'),
-(88, 'Федотова Ольга Сергеевна', '1985-06-18', '7531598520123456', 'г. Москва, ул. Карла Маркса, д. 3', 'Ж');
+(88, 'Федотова Ольга Сергеевна', '1985-06-18', '7531598520123456', 'г. Москва, ул. Карла Маркса, д. 3', 'Ж'),
+(89, 'Сёмина Мария Александровна', '2004-09-28', '1326457895623458', 'г. Москва, ул. Поддубная, д. 48', 'Ж'),
+(90, 'Васечкин Игорь Петрович', '2002-05-02', '1235485125653323', 'г. Москва, ул. Мирная, д. 17', 'М');
 
 -- --------------------------------------------------------
 
@@ -639,20 +1303,19 @@ INSERT INTO `information_about_patient` (`id_patient`, `full_name`, `birthday`, 
 CREATE TABLE `info_about_polyclinic` (
   `id_polyclinic` int(11) NOT NULL,
   `name_polyclinic` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `address` varchar(180) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `work_schedule` varchar(90) COLLATE utf8mb4_unicode_ci NOT NULL
+  `address` varchar(180) COLLATE utf8mb4_unicode_ci NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Дамп данных таблицы `info_about_polyclinic`
 --
 
-INSERT INTO `info_about_polyclinic` (`id_polyclinic`, `name_polyclinic`, `address`, `work_schedule`) VALUES
-(1, 'Лечебное отделение поликлиники №1', 'г. Москва, ул. Ленина, д. 10, корп. 1', 'Пн-Пт: 08:00 - 20:00, Сб: 09:00 - 15:00, Вс: Выходной'),
-(2, 'Диагностическое отделение поликлиники №1', 'г. Москва, ул. Ленина, д.11', 'Пн-Пт: 08:00 - 19:00, Сб: 09:00 - 14:00, Вс: Выходной'),
-(3, 'Центр женского здоровья поликлиники №1', 'г. Москва, ул. Ленина д.10, корп. 2', 'Пн-Пт: 08:00 - 18:00, Сб: 09:00 - 13:00, Вс: Выходной'),
-(4, 'Стоматологический комплекс поликлиники №1', 'г. Москва, ул. Ленина, д.12', 'Пн-Пт: 08:00 - 19:00, Сб: 09:00 - 16:00, Вс: Выходной'),
-(5, 'Реабилитационный и неврологический центр поликлиники №1', 'г. Москва, ул. Ленина, д.13', 'Пн-Пт: 08:00 - 20:00, Сб: 09:00 - 15:00, Вс: Выходной');
+INSERT INTO `info_about_polyclinic` (`id_polyclinic`, `name_polyclinic`, `address`) VALUES
+(1, 'Лечебное отделение поликлиники №1', 'г. Москва, ул. Ленина, д. 10, корп. 1'),
+(2, 'Диагностическое отделение поликлиники №1', 'г. Москва, ул. Ленина, д.11'),
+(3, 'Центр женского здоровья поликлиники №1', 'г. Москва, ул. Ленина д.10, корп. 2'),
+(4, 'Стоматологический комплекс поликлиники №1', 'г. Москва, ул. Ленина, д.12'),
+(5, 'Реабилитационный и неврологический центр поликлиники №1', 'г. Москва, ул. Ленина, д.13');
 
 -- --------------------------------------------------------
 
@@ -662,9 +1325,7 @@ INSERT INTO `info_about_polyclinic` (`id_polyclinic`, `name_polyclinic`, `addres
 
 CREATE TABLE `medical_history` (
   `id_history` int(11) NOT NULL,
-  `date_of_admission` date NOT NULL,
   `complaints` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `id_patient` int(11) NOT NULL,
   `id_disease` int(90) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -672,27 +1333,27 @@ CREATE TABLE `medical_history` (
 -- Дамп данных таблицы `medical_history`
 --
 
-INSERT INTO `medical_history` (`id_history`, `date_of_admission`, `complaints`, `id_patient`, `id_disease`) VALUES
-(1, '2023-10-01', 'Лихорадка, кашель', 1, 1),
-(2, '2023-10-02', 'Боль в правом нижнем квадранте живота', 60, 2),
-(3, '2023-10-03', 'Боль в зубах', 61, 3),
-(4, '2023-10-04', 'Боль внизу живота', 62, 4),
-(5, '2023-10-05', 'Размытость зрения', 63, 5),
-(6, '2023-10-06', 'Боль в суставах', 64, 6),
-(7, '2023-10-07', 'Чувство жажды', 65, 7),
-(8, '2023-10-08', 'Сильная головная боль', 66, 8),
-(9, '2023-10-09', 'Головные боли', 67, 9),
-(10, '2023-10-10', 'Усталость, увеличение веса', 68, 10),
-(11, '2023-10-11', 'Кашель, одышка', 1, 12),
-(12, '2023-10-12', 'Боль в суставах', 60, 6),
-(13, '2023-10-13', 'Боль в зубах', 61, 3),
-(14, '2023-10-14', 'Боль внизу живота', 62, 4),
-(15, '2023-10-15', 'Сильная головная боль', 63, 8),
-(16, '2023-10-16', 'Чувство жажды', 70, 7),
-(17, '2023-10-17', 'Головные боли', 88, 9),
-(18, '2023-10-18', 'Усталость, увеличение веса', 84, 10),
-(19, '2023-10-19', 'Лихорадка, кашель', 79, 1),
-(20, '2023-10-20', 'Боль в правом нижнем квадранте живота', 74, 2);
+INSERT INTO `medical_history` (`id_history`, `complaints`, `id_disease`) VALUES
+(1, 'Лихорадка, кашель', 1),
+(2, 'Боль в правом нижнем квадранте живота', 2),
+(3, 'Боль в зубах', 3),
+(4, 'Боль внизу живота', 4),
+(5, 'Размытость зрения', 5),
+(6, 'Боль в суставах', 6),
+(7, 'Чувство жажды', 7),
+(8, 'Сильная головная боль', 8),
+(9, 'Головные боли', 9),
+(10, 'Усталость, увеличение веса', 10),
+(11, 'Кашель, одышка', 12),
+(12, 'Боль в суставах', 6),
+(13, 'Боль в зубах', 3),
+(14, 'Боль внизу живота', 4),
+(15, 'Сильная головная боль', 8),
+(16, 'Чувство жажды', 7),
+(17, 'Головные боли', 9),
+(18, 'Усталость, увеличение веса', 10),
+(19, 'Лихорадка, кашель', 1),
+(20, 'Боль в правом нижнем квадранте живота', 2);
 
 -- --------------------------------------------------------
 
@@ -758,7 +1419,94 @@ INSERT INTO `operating_ranges` (`id_ranges`, `range_start`, `range_end`) VALUES
 (45, '19:00:00', '19:15:00'),
 (46, '19:15:00', '19:30:00'),
 (47, '19:30:00', '19:45:00'),
-(48, '19:45:00', '20:00:00');
+(48, '19:45:00', '20:00:00'),
+(49, '08:00:00', '09:00:00'),
+(50, '09:00:00', '10:00:00'),
+(51, '10:00:00', '11:00:00'),
+(52, '11:00:00', '12:00:00'),
+(53, '08:00:00', '08:30:00'),
+(54, '08:30:00', '09:00:00'),
+(55, '09:00:00', '09:30:00'),
+(56, '09:30:00', '10:00:00'),
+(57, '10:00:00', '10:30:00'),
+(58, '10:30:00', '11:00:00'),
+(59, '11:00:00', '11:30:00'),
+(60, '11:30:00', '12:00:00'),
+(61, '12:00:00', '12:30:00'),
+(62, '12:30:00', '13:00:00'),
+(63, '13:00:00', '13:30:00'),
+(64, '13:30:00', '14:00:00'),
+(65, '14:00:00', '14:30:00'),
+(66, '14:30:00', '15:00:00'),
+(67, '15:00:00', '15:30:00'),
+(68, '15:30:00', '16:00:00'),
+(69, '16:00:00', '16:30:00'),
+(70, '16:30:00', '17:00:00'),
+(71, '17:00:00', '17:30:00'),
+(72, '17:30:00', '18:00:00'),
+(73, '18:00:00', '18:30:00'),
+(74, '18:30:00', '19:00:00'),
+(75, '08:00:00', '08:45:00'),
+(76, '08:45:00', '09:30:00'),
+(77, '09:30:00', '10:15:00'),
+(78, '10:15:00', '11:00:00'),
+(79, '11:00:00', '11:45:00');
+
+-- --------------------------------------------------------
+
+--
+-- Структура таблицы `polyclinic_schedule`
+--
+
+CREATE TABLE `polyclinic_schedule` (
+  `id_schedule` int(11) NOT NULL,
+  `day_of_week` tinyint(4) NOT NULL COMMENT '0-воскресенье, 1-понедельник и т.д',
+  `start_time` time NOT NULL,
+  `end_time` time NOT NULL,
+  `is_working` tinyint(1) NOT NULL,
+  `polyclinic_id` int(11) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Дамп данных таблицы `polyclinic_schedule`
+--
+
+INSERT INTO `polyclinic_schedule` (`id_schedule`, `day_of_week`, `start_time`, `end_time`, `is_working`, `polyclinic_id`) VALUES
+(1, 1, '08:00:00', '20:00:00', 1, 1),
+(2, 2, '08:00:00', '20:00:00', 1, 1),
+(3, 3, '08:00:00', '20:00:00', 1, 1),
+(4, 4, '08:00:00', '20:00:00', 1, 1),
+(5, 5, '08:00:00', '20:00:00', 1, 1),
+(6, 6, '09:00:00', '15:00:00', 1, 1),
+(7, 0, '00:00:00', '00:00:00', 0, 1),
+(8, 1, '08:00:00', '19:00:00', 1, 2),
+(9, 2, '08:00:00', '19:00:00', 1, 2),
+(10, 3, '08:00:00', '19:00:00', 1, 2),
+(11, 4, '08:00:00', '19:00:00', 1, 2),
+(12, 5, '08:00:00', '19:00:00', 1, 2),
+(13, 6, '09:00:00', '14:00:00', 1, 2),
+(14, 0, '00:00:00', '00:00:00', 0, 2),
+(15, 1, '08:00:00', '18:00:00', 1, 3),
+(16, 2, '08:00:00', '18:00:00', 1, 3),
+(17, 3, '08:00:00', '18:00:00', 1, 3),
+(18, 4, '08:00:00', '18:00:00', 1, 3),
+(19, 5, '08:00:00', '18:00:00', 1, 3),
+(20, 6, '09:00:00', '13:00:00', 1, 3),
+(21, 0, '00:00:00', '00:00:00', 1, 3),
+(22, 1, '08:00:00', '20:00:00', 1, 4),
+(23, 2, '08:00:00', '19:00:00', 1, 4),
+(24, 3, '08:00:00', '19:00:00', 1, 4),
+(25, 4, '08:00:00', '19:00:00', 1, 4),
+(26, 5, '08:00:00', '19:00:00', 1, 4),
+(27, 6, '09:00:00', '16:00:00', 1, 4),
+(28, 0, '00:00:00', '00:00:00', 1, 4),
+(29, 1, '08:00:00', '20:00:00', 1, 5),
+(30, 2, '08:00:00', '20:00:00', 1, 5),
+(31, 3, '08:00:00', '20:00:00', 1, 5),
+(32, 4, '08:00:00', '20:00:00', 1, 5),
+(33, 5, '08:00:00', '20:00:00', 1, 5),
+(34, 6, '09:00:00', '15:00:00', 1, 5),
+(35, 0, '00:00:00', '00:00:00', 1, 5);
 
 -- --------------------------------------------------------
 
@@ -810,7 +1558,8 @@ INSERT INTO `qualification_improvement` (`id_qualif_improv`, `name`, `type`, `na
 (29, 'Инфекционные заболевания', 'Курс', 'Отделение дополнительного образования при медицинском университет', '2022-02-02', 24),
 (30, ' Острые и хронические заболевания уха, носа и его придаточных пазух, глотки и гортани.', 'Лекция', 'Цент дополнительного образования при Московском медицинском университете', '2024-12-02', 18),
 (32, 'Лапароскопия в диагностике и лечении экстренных заболеваний органов брюшной полости', 'Курс', ' РНИМУ им. Н. И. Пирогова', '2024-03-03', 2),
-(33, 'Современные подходы в терапии', 'Курс', 'Московский институт дополнительного образования', '2024-10-05', 1);
+(33, 'Современные подходы в терапии', 'Курс', 'Московский институт дополнительного образования', '2024-10-05', 1),
+(34, 'Белые ночи гастроэнтерологии', 'Семинар', 'V Всероссийский научно-практический конгресс с международным участием', '2024-05-05', 17);
 
 -- --------------------------------------------------------
 
@@ -872,7 +1621,7 @@ CREATE TABLE `staff` (
 
 INSERT INTO `staff` (`id_doctor`, `full_name`, `birthday`, `post`, `status`, `address`, `phone_number`, `id_department`) VALUES
 (1, 'Иванов Иван Иванович', '1985-05-15', 'Врач-терапевт', 1, 'г. Москва, ул. Ленина, д. 1', '+7 985 658-98-78', 1),
-(2, 'Петров Петр Петрович', '1982-03-20', 'Врач-терапевт', 1, 'г. Москва, ул. СОлнечная. д. 5', '+7 974 985-87-87', 1),
+(2, 'Петров Петр Петрович', '1982-03-20', 'Врач-терапевт', 1, 'г. Москва, ул. Солнечная. д. 5', ' 7 974 985-87-87', 1),
 (3, 'Сидорова Светлана Сергеевна', '1990-07-10', 'Врач-терапевт', 1, 'г. Москва, ул. Баумана, д. 23', '+7 911 111-11-11', 1),
 (4, 'Кузнецов Алексей Викторович', '1988-11-25', 'Врач-терапевт', 1, 'г. Москва, ул. Малышева, д. 38', '+7 966-666-55-55', 1),
 (5, 'Смирнова Анна Владимировна', '1985-02-14', 'Абдоминальный хирургг', 0, 'г. Москва, ул. Тверская, д. 22', '+7 900 323-05-67', 2),
@@ -916,11 +1665,11 @@ INSERT INTO `staff` (`id_doctor`, `full_name`, `birthday`, `post`, `status`, `ad
 (43, 'Семенова Анна Владимировна', '1987-02-18', 'Дерматолог', 0, 'г. Москва, ул. Крымский вал, д. 5', '+7 942 024-68-13', 15),
 (44, 'Баранов Денис Николаевич', '1985-10-14', 'Гастроэнтеролог', 0, 'г. Москва, ул. Пресненская набережная, д. 10', '+7 935 135-79-24', 16),
 (45, 'Григорьева Юлия Сергеевна', '1992-03-25', 'Гастроэнтеролог', 0, 'г. Москва, ул. Садовая-Черногрязская, д. 8', '+7 958 246-80-35', 16),
-(46, 'Костина Татьяна Андреевна', '1984-09-12', 'Отоларинголог', 1, 'г. Москва, ул. Кировоградская, д. 5', '+7 919 357-91-46', 17),
+(46, 'Костина Татьяна Андреевна', '1984-09-12', 'Врач-отоларинголог', 1, 'г. Москва, ул. Кировоградская, д. 5', ' 7 919 357-91-46', 17),
 (47, 'Задорнов Дмитрий Васильевич', '1995-12-02', 'Кардиохирург', 0, 'г. Москва, ул. Менделеева, д. 7', '+7 965 587-98-89', 24),
 (48, 'Мария Егорова Александровна', '1998-05-14', 'Врач-уролог', 0, 'г. Москва, ул. Солнечная, д. 15', '+7 958 254-78-98', 21),
 (49, 'Любавина Мария Александровна', '1992-02-02', 'Врач-уролог', 0, 'г. Москва, ул. Ягодная, д. 15', '+7 958 254-78-98', 21),
-(51, 'Генриховна Эмма Вудхаус', '2000-02-12', 'Врач-отоларинголог', 1, 'г. Москва, ул. Мирная, д. 17', '+7 985 257-89-98', 17);
+(50, 'Шик Анна Ивановна', '1981-08-02', 'Врач-гастроэнтеролог', 1, 'г. Москва, ул. Мирная, д. 13', '+7 965 247-85-95', 28);
 
 --
 -- Индексы сохранённых таблиц
@@ -1013,7 +1762,6 @@ ALTER TABLE `info_about_polyclinic`
 --
 ALTER TABLE `medical_history`
   ADD PRIMARY KEY (`id_history`),
-  ADD KEY `id_patient` (`id_patient`),
   ADD KEY `id_disease` (`id_disease`);
 
 --
@@ -1021,6 +1769,13 @@ ALTER TABLE `medical_history`
 --
 ALTER TABLE `operating_ranges`
   ADD PRIMARY KEY (`id_ranges`);
+
+--
+-- Индексы таблицы `polyclinic_schedule`
+--
+ALTER TABLE `polyclinic_schedule`
+  ADD PRIMARY KEY (`id_schedule`),
+  ADD KEY `polyclinic_id` (`polyclinic_id`);
 
 --
 -- Индексы таблицы `qualification_improvement`
@@ -1053,7 +1808,7 @@ ALTER TABLE `staff`
 -- AUTO_INCREMENT для таблицы `appointment`
 --
 ALTER TABLE `appointment`
-  MODIFY `id_appointment` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=21;
+  MODIFY `id_appointment` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=298;
 
 --
 -- AUTO_INCREMENT для таблицы `cabinet`
@@ -1077,7 +1832,7 @@ ALTER TABLE `connection_education`
 -- AUTO_INCREMENT для таблицы `connection_qualif_improve`
 --
 ALTER TABLE `connection_qualif_improve`
-  MODIFY `id_connection_qualif_improve` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=56;
+  MODIFY `id_connection_qualif_improve` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=57;
 
 --
 -- AUTO_INCREMENT для таблицы `department`
@@ -1107,7 +1862,7 @@ ALTER TABLE `field_of_medicine`
 -- AUTO_INCREMENT для таблицы `information_about_patient`
 --
 ALTER TABLE `information_about_patient`
-  MODIFY `id_patient` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=89;
+  MODIFY `id_patient` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=91;
 
 --
 -- AUTO_INCREMENT для таблицы `info_about_polyclinic`
@@ -1125,13 +1880,19 @@ ALTER TABLE `medical_history`
 -- AUTO_INCREMENT для таблицы `operating_ranges`
 --
 ALTER TABLE `operating_ranges`
-  MODIFY `id_ranges` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=49;
+  MODIFY `id_ranges` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=80;
+
+--
+-- AUTO_INCREMENT для таблицы `polyclinic_schedule`
+--
+ALTER TABLE `polyclinic_schedule`
+  MODIFY `id_schedule` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=36;
 
 --
 -- AUTO_INCREMENT для таблицы `qualification_improvement`
 --
 ALTER TABLE `qualification_improvement`
-  MODIFY `id_qualif_improv` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=34;
+  MODIFY `id_qualif_improv` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=35;
 
 --
 -- AUTO_INCREMENT для таблицы `referral`
@@ -1143,7 +1904,7 @@ ALTER TABLE `referral`
 -- AUTO_INCREMENT для таблицы `staff`
 --
 ALTER TABLE `staff`
-  MODIFY `id_doctor` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=52;
+  MODIFY `id_doctor` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=51;
 
 --
 -- Ограничения внешнего ключа сохраненных таблиц
@@ -1203,8 +1964,13 @@ ALTER TABLE `education`
 -- Ограничения внешнего ключа таблицы `medical_history`
 --
 ALTER TABLE `medical_history`
-  ADD CONSTRAINT `medical_history_ibfk_1` FOREIGN KEY (`id_patient`) REFERENCES `information_about_patient` (`id_patient`),
   ADD CONSTRAINT `medical_history_ibfk_2` FOREIGN KEY (`id_disease`) REFERENCES `disease` (`id_disease`);
+
+--
+-- Ограничения внешнего ключа таблицы `polyclinic_schedule`
+--
+ALTER TABLE `polyclinic_schedule`
+  ADD CONSTRAINT `polyclinic_schedule_ibfk_1` FOREIGN KEY (`polyclinic_id`) REFERENCES `info_about_polyclinic` (`id_polyclinic`);
 
 --
 -- Ограничения внешнего ключа таблицы `qualification_improvement`
