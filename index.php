@@ -206,38 +206,37 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 3) {
 
 
 //Отчеты
-function getReports1Table($conn, $city = null, $gender = null, $field_of_medicine = null, $age_start=null, $age_end=null, $date_start=null, $date_end=null,  $kol=null, $top=null, $group=null)
+function getReports1Table($conn, $city = null, $gender = null, $field_of_medicine = null, $age_partition=null, $date_start=null, $date_end=null,  $kol=null, $group_1=null,  $group_2=null,  $group_3=null)
 {
     $city = $city ?? 'all';
     $gender = $gender ?? 'all';
     $field_of_medicine = is_numeric($field_of_medicine) ? intval($field_of_medicine) : 0;
-    $age_start = is_numeric($age_start) ? intval($age_start) : 0;
-    $age_end = is_numeric($age_end) ? intval($age_end) : 100;
+    $age_partition = is_numeric($age_partition) ? intval($age_partition) : 0;
     $date_start = $date_start ? "'$date_start'" : 'NULL';
     $date_end = $date_end ? "'$date_end'" : 'NULL';
     $kol = is_numeric($kol) ? intval($kol) : 0;
-    $top = is_numeric($top) ? intval($top) : 0;
-    $group = is_numeric($group) ? intval($group) : 0;
+    $group_1 = is_numeric($group_1) ? intval($group_1) : 0;
+    $group_2 = is_numeric($group_2) ? intval($group_2) : 0;
+    $group_3 = is_numeric($group_3) ? intval($group_3) : 0;
    
-    //$reports1 = callProcedure($conn, "CALL 	getreports1Table('$city', '$gender', $field_of_medicine, $age_start, $age_end, $date_start, $date_end, $kol, $top, $group)");
-    $reports1 = callProcedure($conn, " CALL getreport1Table ($age_start, $age_end, '$city','$gender', $field_of_medicine, $date_start, $date_end, $kol, $group, $top )");
-
+    
+    $reports1 = callProcedure($conn, "CALL getreportsTable ('$city', '$gender', $field_of_medicine, $age_partition, $date_start, $date_end, $kol, $group_1, $group_2, $group_3)");
     $output = '';
     if ($reports1) {
         $output .= "<table class='table'>";
         $output .= "<thead><tr>
+                        <th>Возрастная группа</th>
                         <th>Наименование заболевания</th>
                         <th>Процентр обращений</th>
                         <th>Год</th>
-                        <th>Месяц</th>
                     </tr></thead>";
         $output .= "<tbody>";
         foreach ($reports1 as $report) {
             $output .= "<tr>
+                            <td>" . htmlspecialchars($report['age_group']) . "</td>                
                             <td>" . htmlspecialchars($report['name_of_disease']) . "</td>
                             <td>" . htmlspecialchars($report['procent']) . "</td>
                             <td>" . htmlspecialchars($report['appointment_year']) . "</td>
-                            <td>" . htmlspecialchars($report['appointment_month']) . "</td>
                         </tr>";
         }
         $output .= "</tbody></table>";
@@ -254,16 +253,16 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 4) {
     $city = $_POST['city'] ?? null;
     $gender = $_POST['gender'] ?? null;
     $field_of_medicine = $_POST['field_of_medicine'] ?? null;
-    $age_start = $_POST['age_start'] ?? null;
-    $age_end = $_POST['age_end'] ?? null;
+    $age_partition = $_POST['age_partition'] ?? null;
     $date_start = $_POST['date_start'] ?? null;
     $date_end = $_POST['date_end'] ?? null;
     $kol = $_POST['kol'] ?? null;
-    $top= $_POST['top'] ?? null;
-    $group = $_POST['group'] ?? null;
+    $group_1 = $_POST['group_1'] ?? null;
+    $group_2 = $_POST['group_2'] ?? null;
+    $group_3 = $_POST['group_3'] ?? null;
 
     // Возвращаем только HTML-код таблицы
-    echo getReports1Table($conn, $city, $gender, $field_of_medicine, $age_start, $age_end, $date_start, $date_end,  $kol, $top, $group);
+    echo getReports1Table($conn, $city, $gender, $field_of_medicine, $age_partition, $date_start, $date_end, $kol, $group_1, $group_2, $group_3);
     exit(); // Важно! Прекращаем выполнение скрипта после отправки данных
 }
 
@@ -632,13 +631,16 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 4) {
                         </div>
                     </div>
                     <div class="row g-3 mb-3">
-                        <div class="col-md-4">
-                            <label for="age_group_start_report1" class="form-label">Возрастная группа в диапазоне с:</label>
-                            <input type="text" class="form-control" id="age_group_start_report1" name="age_group_start_report1" required>
-                        </div>
-                        <div class="col-md-4">
-                            <label for="age_group_end_report1" class="form-label">по:</label>
-                            <input type="text" class="form-control" id="age_group_end_report1" name="age_group_end_report1" required>
+                        <div class="col-md-3">
+                            <label for="age_interval_report1" class="form-label">Разбиение возрастов:</label>
+                            <select id="age_interval_report1" class="form-select">
+                                <option value="5">5 лет</option>
+                                <option value="10" selected>10 лет</option>
+                                <option value="15">15 лет</option>
+                                <option value="20">20 лет</option>
+                                <option value="25">25 лет</option>
+                                <option value="30">30 лет</option>
+                            </select>
                         </div>
                     </div>
                     <div class="row mb-3">
@@ -657,18 +659,43 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 4) {
                             <label for="kol_reports1" class="form-label">Минимальное количество обращений:</label>
                             <input type="text" class="form-control" id="kol_reports1" name="kol_reports1">
                         </div>
-                        <div class="col-md-4">
-                            <label for="top_reports1" class="form-label">Составить топ заболеваний:</label>
-                            <input type="text" class="form-control" id="top_reports1" name="top_reports1">
+                        
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-4">
+                                <label for="yslovie_reports1" class="form-label">Первичная группировка:</label>
+                                <select id="yslovie_reports1" class="form-select">
+                                    <option value="0" selected>Нет</option>
+                                    <option value="1">По годам</option>
+                                    <option value="2">По месяцам</option>
+                                    <option value="3">По городам</option>
+                                    <option value="4">По полу</option>
+                                    <option value="5">По году рождения</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="yslovie2_reports1" class="form-label">Вторичная группировка:</label>
+                                <select id="yslovie2_reports1" class="form-select">
+                                    <option value="0" selected>Нет</option>
+                                    <option value="1">По годам</option>
+                                    <option value="2">По месяцам</option>
+                                    <option value="3">По городам</option>
+                                    <option value="4">По полу</option>
+                                    <option value="5">По году рождения</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="yslovie3_reports1" class="form-label">Третичная группировка:</label>
+                                <select id="yslovie3_reports1" class="form-select">
+                                    <option value="0" selected>Нет</option>
+                                    <option value="1">По годам</option>
+                                    <option value="2">По месяцам</option>
+                                    <option value="3">По городам</option>
+                                    <option value="4">По полу</option>
+                                    <option value="5">По году рождения</option>
+                                </select>
+                            </div>
                         </div>
-                        <div class="col-md-3">
-                            <label for="yslovie_reports1" class="form-label">Группировка:</label>
-                            <select id="yslovie_reports1" class="form-select">
-                                <option value="0" selected>По умолчанию</option>
-                                <option value="1">Группировка по годам</option>
-                                <option value="2">Группировка по месяцам</option>
-                            </select>
-                        </div>
+
                         <div class="col-md-12 d-flex justify-content-end">
                             <button type="button" class="btn btn-primary" onclick="applyFiltersReports1()">
                                 Сформировать отчет
@@ -1223,13 +1250,13 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 4) {
         var city = document.getElementById('city_report1').value;
         var gender = document.getElementById('gender_report1').value;
         var field_of_medicine = document.getElementById('medicalField_reports1').value;
-        var age_start = document.getElementById('age_group_start_report1').value;
-        var age_end = document.getElementById('age_group_end_report1').value;
+        var age_partition = document.getElementById('age_interval_report1').value;
         var date_start  = document.getElementById('startDate_report1').value;
         var date_end  = document.getElementById('endDate_report1').value;
         var kol  = document.getElementById('kol_reports1').value;
-        var top  = document.getElementById('top_reports1').value;
-        var group = document.getElementById('yslovie_reports1').value;
+        var group_1 = document.getElementById('yslovie_reports1').value;
+        var group_2 = document.getElementById('yslovie2_reports1').value;
+        var group_3 = document.getElementById('yslovie3_reports1').value;
 
 
         // Создаем объект XMLHttpRequest для AJAX-запроса
@@ -1246,49 +1273,19 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 4) {
         xhr.onerror = function () {
             alert('Произошла ошибка при выполнении запроса.');
         };
-        xhr.send('ajax=4&city=' + encodeURIComponent(city) + '&gender=' + encodeURIComponent(gender) + '&field_of_medicine=' + encodeURIComponent(field_of_medicine)
-        + '&age_start=' + encodeURIComponent(age_start)+ '&age_end=' + encodeURIComponent(age_end)+ '&date_start=' + encodeURIComponent(date_start)
-        + '&date_end=' + encodeURIComponent(date_end) + '&kol=' + encodeURIComponent(kol)+ '&top=' + encodeURIComponent(top)+ '&group=' + encodeURIComponent(group));
+        xhr.send('ajax=4&city=' + encodeURIComponent(city) + 
+        '&gender=' + encodeURIComponent(gender) + 
+        '&field_of_medicine=' + encodeURIComponent(field_of_medicine) +
+        '&age_partition=' + encodeURIComponent(age_partition) + 
+        '&date_start=' + encodeURIComponent(date_start) +
+        '&date_end=' + encodeURIComponent(date_end) + 
+        '&kol=' + encodeURIComponent(kol) + 
+        '&group_1=' + encodeURIComponent(group_1) + 
+        '&group_2=' + encodeURIComponent(group_2) + 
+        '&group_3=' + encodeURIComponent(group_3));
     }
 
 /*function updateAppointment(id) {
-    const form = document.getElementById('editAppointmentForm');
-    const formData = new FormData(form);
-    
-    // Добавляем ID записи в FormData, если его нет
-    if (!formData.has('id_appointment')) {
-        formData.append('id_appointment', id);
-    }
-    
-    fetch('update_appointment.php', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => {
-        if (!response.ok) {
-            throw new Error('Network response was not ok');
-        }
-        return response.json();
-    })
-    .then(data => {
-        if (data.status === 'success') {
-            alert('Изменения сохранены успешно!');
-            // Закрываем модальное окно
-            const modal = bootstrap.Modal.getInstance(document.getElementById('appointmentModal'));
-            modal.hide();
-            // Обновляем таблицу (если нужно)
-            applyFiltersAppointment();
-        } else {
-            alert('Ошибка: ' + (data.message || 'Неизвестная ошибка'));
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert('Произошла ошибка при сохранении: ' + error.message);
-    });
-}*/
-
-function updateAppointment(id) {
     const form = document.getElementById('editAppointmentForm');
     const formData = new FormData(form);
 
@@ -1332,6 +1329,66 @@ function updateAppointment(id) {
             const modal = bootstrap.Modal.getInstance(document.getElementById('appointmentModal'));
             modal.hide();
             // Обновляем таблицу (если нужно)
+            applyFiltersAppointment();
+        } else {
+            alert('Ошибка: ' + (data.message || 'Неизвестная ошибка'));
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Произошла ошибка при сохранении: ' + error.message);
+    });
+}*/
+
+function toggleDiseaseFields() {
+    const diseaseSelect = document.getElementById('diseaseSelect');
+    const diseaseFields = document.getElementById('diseaseFields');
+    
+    if (diseaseSelect.value > 0) {
+        // Если выбрана существующая болезнь, делаем поля только для чтения
+        diseaseFields.querySelectorAll('input, textarea, select').forEach(field => {
+            field.readOnly = true;
+            field.disabled = true;
+        });
+    } else {
+        // Если создается новая болезнь, разрешаем редактирование
+        diseaseFields.querySelectorAll('input, textarea, select').forEach(field => {
+            field.readOnly = false;
+            field.disabled = false;
+        });
+    }
+}
+
+// Вызываем при загрузке страницы
+document.addEventListener('DOMContentLoaded', function() {
+    toggleDiseaseFields();
+});
+
+function updateAppointment(id) {
+    const form = document.getElementById('editAppointmentForm');
+    const formData = new FormData(form);
+    formData.append('id_appointment', id);
+
+    fetch('update_appointment.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => {
+        if (!response.ok) throw new Error("HTTP error " + response.status);
+        return response.text().then(text => {
+            try {
+                return JSON.parse(text);
+            } catch (e) {
+                console.error("Invalid JSON:", text);
+                throw new Error("Invalid server response");
+            }
+        });
+    })
+    .then(data => {
+        if (data.status === 'success') {
+            alert('Изменения сохранены успешно!');
+            const modal = bootstrap.Modal.getInstance(document.getElementById('appointmentModal'));
+            modal.hide();
             applyFiltersAppointment();
         } else {
             alert('Ошибка: ' + (data.message || 'Неизвестная ошибка'));

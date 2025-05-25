@@ -93,6 +93,16 @@ if ($appointment['status'] == 0) { // Если врач принимает то�
     $pacients = $result_pacients ? $result_pacients->fetch_all(MYSQLI_ASSOC) : [];
 }
 
+
+// Получаем список всех болезней для выбора
+$diseases = $conn->query("SELECT id_disease, name_of_disease FROM disease")->fetch_all(MYSQLI_ASSOC);
+
+// Получаем текущую болезнь, если есть
+$currentDisease = null;
+if (!empty($appointment['id_medical_history'])) {
+    $currentDisease = $conn->query("SELECT id_disease FROM medical_history WHERE id_history = " . $appointment['id_medical_history'])->fetch_assoc();
+}
+
 ?>
 
 <div class="container-fluid">
@@ -145,6 +155,19 @@ if ($appointment['status'] == 0) { // Если врач принимает то�
         
         <?php if ($appointment['id_patient'] != 0 && $appointment['id_medical_history'] != 0): ?>
             <h5>Результаты приема</h5>
+            <div class="mb-3">
+                <label class="form-label">Выберите болезнь</label>
+                <select class="form-select" name="disease_id" id="diseaseSelect" onchange="toggleDiseaseFields()">
+                    <option value="0">-- Создать новую болезнь --</option>
+                    <?php foreach ($diseases as $disease): ?>
+                        <option value="<?= $disease['id_disease'] ?>" 
+                            <?= ($currentDisease['id_disease'] ?? 0) == $disease['id_disease'] ? 'selected' : '' ?>>
+                            <?= htmlspecialchars($disease['name_of_disease']) ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            
             <div class="mb-3">
                 <label class="form-label">Область медицины</label>
                 <select class="form-select" name="id_field" required>
