@@ -23,6 +23,7 @@ function callProcedure($conn, $sql) {
 $polyclinics = callProcedure($conn, "CALL polyclinic_philter()");
 $cities = callProcedure($conn, "CALL get_cities('information_about_patient')");
 $streets = callProcedure($conn, "CALL get_street('information_about_patient')");
+$diseases = $conn->query("SELECT id_disease, name_of_disease FROM disease")->fetch_all(MYSQLI_ASSOC);
 
 $edit_doctor_sql_philter_field_of_medicine = "SELECT id_field, name_of_field FROM field_of_medicine;";
 $edit_doctor_sql_philter_field_of_medicine_result = $conn->query($edit_doctor_sql_philter_field_of_medicine);
@@ -367,23 +368,6 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 4) {
         <?php include 'make_new_doctor.php'; ?> 
         <?php include 'edit_doctor_modal.php'; ?> 
 
-
-        <div class="modal fade" id="appointmentModal" tabindex="-1" aria-hidden="true">
-            <div class="modal-dialog">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h5 class="modal-title">Детали записи</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                    </div>
-                    <div class="modal-body" id="appointmentModalBody">
-                    </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-
         <div class="modal fade" id="referralModal" tabindex="-1" aria-hidden="true">
             <div class="modal-dialog">
                 <div class="modal-content">
@@ -488,7 +472,7 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 4) {
         </div>
         <?php include 'make_new_patient.php'; ?>
 
-        <div class="tab-pane fade " id="appointment" role="tabpanel" aria-labelledby="appointment">
+        <div class="tab-pane fade" id="appointment" role="tabpanel" aria-labelledby="appointment">
             <h2 class="mb-4">Записи</h2>
             <div class="card mb-4">
                 <div class="card-body">
@@ -582,6 +566,15 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 4) {
                         <?php echo getAppointmentsTable($conn); ?>
                     </div>
                 </div>
+            </div>
+            <div id="appointment-details-container" class="mt-4 d-none">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h2>Детали записи</h2>
+                    <button type="button" class="btn btn-secondary" onclick="backToAppointmentsList()">
+                        <i class="bi bi-arrow-left"></i> Назад к списку
+                    </button>
+                </div>
+                <div id="appointment-details-content"></div>
             </div>
         </div>
         <?php include 'newListAppointmentModal.php'; ?>
@@ -923,37 +916,6 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 4) {
 
     });
 
-    function applyFiltersAppointment() {
-        var polyclinic_id = document.getElementById('polyclinic_id_appointment').value;
-        var department_id = document.getElementById('department_id_appointment').value;
-        var letters_range = document.getElementById('letters_range_appointment').value;
-        var doctor_id = document.getElementById('doctor_id_appointment').value;
-        var date_start= document.getElementById('startDate_appointment').value;  
-        var date_end= document.getElementById('endDate_appointment').value;
-        var status=document.querySelector('input[name="appointmentFilter_radio"]:checked').value;
-
-        var xhr = new XMLHttpRequest();
-        xhr.open('POST', '', true);
-        xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-        xhr.onload = function() {
-            if (xhr.status === 200) {
-                document.getElementById('appointments_table').innerHTML = xhr.responseText;
-                bindAppointmentClickEvents(); 
-            } else {
-                alert('Произошла ошибка при выполнении запроса.');
-            }
-        };
-        xhr.onerror = function() {
-            alert('Произошла ошибка при выполнении запроса.');
-        };
-        xhr.send('ajax=3&polyclinic_id=' + encodeURIComponent(polyclinic_id) + 
-                '&department_id=' + encodeURIComponent(department_id) + 
-                '&letters_range=' + encodeURIComponent(letters_range) +
-                '&doctor_id=' + encodeURIComponent(doctor_id)+
-                '&date_start=' + encodeURIComponent(date_start)+
-                '&date_end=' + encodeURIComponent(date_end) +
-                '&status='+ encodeURIComponent(status));
-    }
 
     function applyFiltersPatients() {
         try {
@@ -1199,51 +1161,7 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 4) {
         });
     });
 
-    document.addEventListener('DOMContentLoaded', function() {
-        bindAppointmentClickEvents(); 
-    });
 
-
-    function bindAppointmentClickEvents() {
-        const appointmentRows = document.querySelectorAll('.appointment-id');
-        
-        appointmentRows.forEach(row => {
-            row.addEventListener('click', function() {
-                const appointmentId = this.getAttribute('data-id');
-                fetchAppointmentDetails(appointmentId);
-            });
-        });
-    }
-    function fetchAppointmentDetails(appointmentId) {
-        // Проверяем, загружен ли Bootstrap
-        if (typeof bootstrap === 'undefined' || !bootstrap.Modal) {
-            console.error("Bootstrap Modal не загружен!");
-            return;
-        }
-
-        // Показываем модальное окно
-        const modalElement = document.getElementById('appointmentModal');
-        const modal = bootstrap.Modal.getInstance(modalElement) || new bootstrap.Modal(modalElement);
-        modal.show();
-
-        // Очищаем содержимое модального окна и показываем индикатор загрузки
-        document.getElementById('appointmentModalBody').innerHTML = 'Загрузка данных...';
-
-        // Загружаем данные
-        fetch('get_appointment_details.php?id=' + appointmentId)
-            .then(response => {
-                if (!response.ok) throw new Error("Ошибка сети");
-                return response.text();
-            })
-            .then(data => {
-                document.getElementById('appointmentModalBody').innerHTML = data;
-            })
-            .catch(error => {
-                console.error("Ошибка:", error);
-                document.getElementById('appointmentModalBody').innerHTML =
-                    '<div class="alert alert-danger">Не удалось загрузить данные</div>';
-            });
-    }
 
     function applyFiltersReports1() {
         // Получаем значение выбранных фильтров и записываем их в переменные
@@ -1285,73 +1203,148 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 4) {
         '&group_3=' + encodeURIComponent(group_3));
     }
 
-/*function updateAppointment(id) {
-    const form = document.getElementById('editAppointmentForm');
-    const formData = new FormData(form);
+    document.getElementById('polyclinic_id_appointment').addEventListener('change', function () {
+        var polyclinic_id = this.value;
+        var departmentSelect = document.getElementById('department_id_appointment');
 
-    // Добавляем ID записи в FormData, если его нет
-    if (!formData.has('id_appointment')) {
-        formData.append('id_appointment', id);
-    }
+        departmentSelect.innerHTML = '<option value="all" selected>Все отделения</option>';
 
-    // Добавляем id_patientAppointment, даже если его нет в форме
-    const patientSelect = document.getElementById('id_patientAppointment');
-    if (patientSelect) {
-        formData.append('id_patientAppointment', patientSelect.value);
-    } else {
-        // Если нет элемента select, значит пациент уже назначен, отправляем текущий id
-        // (предполагая, что он где-то сохранен, например, в hidden поле)
-        const existingPatientId = document.querySelector('input[name="existing_patient_id"]'); // Предполагаем, что есть hidden input с именем "existing_patient_id"
-        if (existingPatientId) {
-            formData.append('id_patientAppointment', existingPatientId.value);
-        } else {
-            formData.append('id_patientAppointment', 0); // Или другое значение по умолчанию, если пациента нет
-        }
-    }
-    
-    //Аналогично для полей медицинской истории
-    //...
+        var xhr = new XMLHttpRequest();
+        //преедаем polyclinic_id как параметр файлу get_departments.php
+        xhr.open('GET', 'get_departments.php?id_polyclinic=' + polyclinic_id, true);
+        xhr.onload = function () {
+            if (xhr.status >= 200 && xhr.status < 300) {
+                if (xhr.responseText) {
+                    try {
+                        var departments = JSON.parse(xhr.responseText);
+                        if (Array.isArray(departments)) {
+                            departments.forEach(function (department) {
+                                var option = document.createElement('option');
+                                option.value = department.id_department;
+                                option.textContent = department.name_department;
+                                departmentSelect.appendChild(option);
+                            });
+                        } else {
+                            console.error('Полученный ответ не является массивом:', departments);
+                        }
+                    } catch (e) {
+                        console.error('Ошибка при разраборе JSON:', e);
+                        console.error('Текст ответа:', xhr.responseText);
+                    }
+                } else {
+                    console.warn('Пустой ответ от сервера.');
+                }
+            } else {
+                console.error('Запрос не выполнен со статусом:', xhr.status);
+            }
+        };
+        xhr.onerror = function () {
+            console.error('Запрос не выполнен');
+        };
+        xhr.send();
 
-    fetch('update_appointment.php', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => {
-        if (!response.ok) {
-            throw new Error('Network response was not ok');
-        }
-        return response.json();
-    })
-    .then(data => {
-        if (data.status === 'success') {
-            alert('Изменения сохранены успешно!');
-            // Закрываем модальное окно
-            const modal = bootstrap.Modal.getInstance(document.getElementById('appointmentModal'));
-            modal.hide();
-            // Обновляем таблицу (если нужно)
-            applyFiltersAppointment();
-        } else {
-            alert('Ошибка: ' + (data.message || 'Неизвестная ошибка'));
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert('Произошла ошибка при сохранении: ' + error.message);
     });
-}*/
+
+    document.getElementById('department_id_appointment').addEventListener('change', function () {
+        var department_id = this.value;
+        var doctorSelect = document.getElementById('doctor_id_appointment');
+
+        doctorSelect.innerHTML = '<option value="all" selected>Все врачи</option>';
+
+        var xhr = new XMLHttpRequest();
+
+        xhr.open('GET', 'get_doctors_philter.php?id_department=' + department_id, true);
+        xhr.onload = function () {
+            if (xhr.status >= 200 && xhr.status < 300) {
+                if (xhr.responseText) {
+                    try {
+                        var doctors = JSON.parse(xhr.responseText);
+                        if (Array.isArray(doctors)) {
+                            doctors.forEach(function (doctor) {
+                                var option = document.createElement('option');
+                                option.value = doctor.id_doctor;
+                                option.textContent = doctor.full_name;
+                                doctorSelect.appendChild(option);
+                            });
+                        } else {
+                            console.error('Полученный ответ не является массивом:', doctors);
+                        }
+                    } catch (e) {
+                        console.error('Ошибка при разраборе JSON:', e);
+                        console.error('Текст ответа:', xhr.responseText);
+                    }
+                } else {
+                    console.warn('Пустой ответ от сервера.');
+                }
+            } else {
+                console.error('Запрос не выполнен со статусом:', xhr.status);
+            }
+        };
+        xhr.onerror = function () {
+            console.error('Запрос не выполнен');
+        };
+        xhr.send();
+
+    });
+
+    function applyFiltersAppointment() {
+        var polyclinic_id = document.getElementById('polyclinic_id_appointment').value;
+        var department_id = document.getElementById('department_id_appointment').value;
+        var letters_range = document.getElementById('letters_range_appointment').value;
+        var doctor_id = document.getElementById('doctor_id_appointment').value;
+        var date_start= document.getElementById('startDate_appointment').value;  
+        var date_end= document.getElementById('endDate_appointment').value;
+        var status=document.querySelector('input[name="appointmentFilter_radio"]:checked').value;
+
+        var xhr = new XMLHttpRequest();
+        xhr.open('POST', '', true);
+        xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+        xhr.onload = function() {
+            if (xhr.status === 200) {
+                document.getElementById('appointments_table').innerHTML = xhr.responseText;
+                bindAppointmentClickEvents(); 
+            } else {
+                alert('Произошла ошибка при выполнении запроса.');
+            }
+        };
+        xhr.onerror = function() {
+            alert('Произошла ошибка при выполнении запроса.');
+        };
+        xhr.send('ajax=3&polyclinic_id=' + encodeURIComponent(polyclinic_id) + 
+                '&department_id=' + encodeURIComponent(department_id) + 
+                '&letters_range=' + encodeURIComponent(letters_range) +
+                '&doctor_id=' + encodeURIComponent(doctor_id)+
+                '&date_start=' + encodeURIComponent(date_start)+
+                '&date_end=' + encodeURIComponent(date_end) +
+                '&status='+ encodeURIComponent(status));
+    }
+
+    document.querySelectorAll('.btn-close, [data-bs-dismiss="modal"]').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const modal = bootstrap.Modal.getInstance(this.closest('.modal'));
+            if (modal) modal.hide();
+        });
+    });
+
+    document.addEventListener('DOMContentLoaded', function() {
+        bindAppointmentClickEvents(); 
+    });
 
 function toggleDiseaseFields() {
     const diseaseSelect = document.getElementById('diseaseSelect');
     const diseaseFields = document.getElementById('diseaseFields');
     
+    if (!diseaseSelect || !diseaseFields) {
+        // Если элементов нет, просто выходим
+        return;
+    }
+    
     if (diseaseSelect.value > 0) {
-        // Если выбрана существующая болезнь, делаем поля только для чтения
         diseaseFields.querySelectorAll('input, textarea, select').forEach(field => {
             field.readOnly = true;
             field.disabled = true;
         });
     } else {
-        // Если создается новая болезнь, разрешаем редактирование
         diseaseFields.querySelectorAll('input, textarea, select').forEach(field => {
             field.readOnly = false;
             field.disabled = false;
@@ -1365,8 +1358,21 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 function updateAppointment(id) {
-    const form = document.getElementById('editAppointmentForm');
+    const form = document.getElementById('editAppointmentForm'); // Исправлено на editAppointmentForm
     const formData = new FormData(form);
+    for (let [key, value] of formData.entries()) {
+        console.log(key, value);
+    }
+
+    if (!formData.has('id_patientAppointment')) {
+        const existingPatientId = form.querySelector('input[name="existing_patient_id"]');
+        if (existingPatientId) {
+            formData.append('id_patientAppointment', existingPatientId.value);
+        } else {
+            formData.append('id_patientAppointment', 0);
+        }
+    }
+
     formData.append('id_appointment', id);
 
     fetch('update_appointment.php', {
@@ -1375,20 +1381,11 @@ function updateAppointment(id) {
     })
     .then(response => {
         if (!response.ok) throw new Error("HTTP error " + response.status);
-        return response.text().then(text => {
-            try {
-                return JSON.parse(text);
-            } catch (e) {
-                console.error("Invalid JSON:", text);
-                throw new Error("Invalid server response");
-            }
-        });
+        return response.json();
     })
     .then(data => {
         if (data.status === 'success') {
             alert('Изменения сохранены успешно!');
-            const modal = bootstrap.Modal.getInstance(document.getElementById('appointmentModal'));
-            modal.hide();
             applyFiltersAppointment();
         } else {
             alert('Ошибка: ' + (data.message || 'Неизвестная ошибка'));
@@ -1397,6 +1394,172 @@ function updateAppointment(id) {
     .catch(error => {
         console.error('Error:', error);
         alert('Произошла ошибка при сохранении: ' + error.message);
+    });
+}
+
+function confirmAppointment(appointmentId) {
+    if (!confirm('Вы уверены, что хотите подтвердить прием? После этого можно будет заполнить историю болезни.')) {
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('appointment_id', appointmentId);
+    fetch('confirm_appointment.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => {
+        if (!response.ok) throw new Error("HTTP error " + response.status);
+        return response.json();
+    })
+    .then(data => {
+        if (data.success) {
+            alert('Приём подтверждён! Теперь можно заполнить историю болезни.');
+            // Перезагружаем детали записи
+            showAppointmentDetails(appointmentId);
+        } else {
+            alert('Ошибка: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Ошибка сети: ' + error.message);
+    });
+}
+
+function openMedicalHistoryModal(appointmentId) {
+    const modalElement = document.getElementById('medicalHistoryModal');
+    if (!modalElement) {
+        console.error('Modal element not found!');
+        return;
+    }
+    const modal = new bootstrap.Modal(modalElement);
+    modal.show();
+
+    // Заполните поля формы
+    document.getElementById('mh_id_appointment').value = appointmentId;
+
+}
+
+function displayMedicalHistoryFields() {
+    const medicalHistoryFields = document.getElementById('medicalHistoryFields');
+    if (medicalHistoryFields) {
+        medicalHistoryFields.style.display = 'block'; // Показываем поля медицинской истории
+    } else {
+        console.error("Элемент с ID 'medicalHistoryFields' не найден.");
+    }
+}
+
+
+ function bindAppointmentClickEvents() {
+    const appointmentRows = document.querySelectorAll('.appointment-id');
+    
+    appointmentRows.forEach(row => {
+        row.addEventListener('click', function() {
+            const appointmentId = this.getAttribute('data-id');
+            showAppointmentDetails(appointmentId);
+        });
+    });
+}
+
+function showAppointmentDetails(appointmentId) {
+    // Показываем контейнер с деталями
+    document.getElementById('appointment-details-container').classList.remove('d-none');
+    // Скрываем таблицу записей
+    document.getElementById('appointments_table').classList.add('d-none');
+    
+    // Загружаем данные записи через AJAX
+    fetch('get_appointment_details.php?id=' + appointmentId)
+        .then(response => {
+            if (!response.ok) throw new Error("Ошибка сети");
+            return response.text();
+        })
+        .then(data => {
+            document.getElementById('appointment-details-content').innerHTML = data;
+        })
+        .catch(error => {
+            console.error("Ошибка:", error);
+            document.getElementById('appointment-details-content').innerHTML =
+                '<div class="alert alert-danger">Не удалось загрузить данные</div>';
+        });
+}
+
+function backToAppointmentsList() {
+    document.getElementById('appointments_table').classList.remove('d-none');
+    document.getElementById('appointment-details-container').classList.add('d-none');
+}
+
+// Обработчик изменения болезни в модальном окне
+function onDiseaseChange() {
+    const diseaseSelect = document.getElementById('diseaseSelect');
+    if (!diseaseSelect) {
+        console.error('Элемент с ID "diseaseSelect" не найден!');
+        return;
+    }
+    const diseaseId = diseaseSelect.value;
+    if (diseaseId > 0) {
+        // Загружаем данные болезни для автозаполнения
+        fetch('get_disease_details.php?id_disease=' + diseaseId)
+            .then(response => {
+                if (!response.ok) throw new Error("Ошибка сети");
+                return response.json();
+            })
+            .then(data => {
+                if (data.error) {
+                    console.error(data.error);
+                    return;
+                }
+                document.getElementById('diagnosisAppointment').value = data.name_of_disease || '';
+                document.getElementById('id_field').value = data.id_field || '';
+                document.getElementById('symptomsAppointment').value = data.symptoms || '';
+                document.getElementById('treatmentAppointment').value = data.treatment_recommendations || '';
+                document.getElementById('medicationsAppointment').value = data.medicament || '';
+                // Заполните другие поля, если нужно
+            })
+            .catch(error => {
+                alert('Ошибка при загрузке данных болезни: ' + error.message);
+            });
+    } else {
+        // Если выбрана новая болезнь, очищаем поля
+        document.getElementById('diagnosisAppointment').value = '';
+        document.getElementById('id_field').value = '';
+        document.getElementById('symptomsAppointment').value = '';
+        document.getElementById('treatmentAppointment').value = '';
+        document.getElementById('medicationsAppointment').value = '';
+    }
+}
+
+
+function cancelAppointment(appointmentId) {
+    if (!confirm('Вы уверены, что хотите отменить эту запись? Пациент будет удален из записи.')) {
+        return;
+    }
+    
+    fetch('cancel_appointment.php', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: 'id=' + appointmentId
+    })
+    .then(response => {
+        if (!response.ok) throw new Error("HTTP error " + response.status);
+        return response.json();
+    })
+    .then(data => {
+        if (data.success) {
+            alert('Запись успешно отменена!');
+            // Обновляем детали записи или возвращаемся к списку
+            showAppointmentDetails(appointmentId);
+            // Или можно обновить весь список
+            // applyFiltersAppointment();
+        } else {
+            alert('Ошибка: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Ошибка сети: ' + error.message);
     });
 }
 

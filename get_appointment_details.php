@@ -55,7 +55,7 @@ $freeCabinets = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 $hasMedicalHistory = !empty($appointment['id_medical_history']);
 
 
-$sql_history="SELECT complaints, name_of_disease, 	symptoms, 	treatment_recommendations, medicament, name_of_field 
+$sql_history="SELECT complaints, name_of_disease, 	symptoms, 	treatment_recommendations, medicament, name_of_field,  disease.id_disease, field_of_medicine.id_field
                     FROM `appointment`
                     JOIN medical_history ON medical_history.id_history=appointment.id_medical_history
                     JOIN disease ON disease.id_disease=medical_history.id_disease
@@ -95,7 +95,9 @@ if ($appointment['status'] == 0) { // Если врач принимает то�
 
 
 // Получаем список всех болезней для выбора
-$diseases = $conn->query("SELECT id_disease, name_of_disease FROM disease")->fetch_all(MYSQLI_ASSOC);
+   $diseases = $conn->query("SELECT id_disease, name_of_disease FROM disease")->fetch_all(MYSQLI_ASSOC);
+   
+
 
 // Получаем текущую болезнь, если есть
 $currentDisease = null;
@@ -105,13 +107,14 @@ if (!empty($appointment['id_medical_history'])) {
 
 ?>
 
-<div class="container-fluid">
+<div class="card">
+    <div class="card-body">
     <form id="editAppointmentForm">
         <input type="hidden" name="id_appointment" value="<?= htmlspecialchars($appointment['id_appointment']) ?>">
         <input type="hidden" name="date" value="<?= htmlspecialchars($appointment['date']) ?>">
         <input type="hidden" name="id_ranges" value="<?= htmlspecialchars($appointment['id_ranges']) ?>">
         <input type="hidden" name="id_doctor" value="<?= htmlspecialchars($appointment['id_doctor']) ?>">
-        
+
         <p><strong>ID записи:</strong> <?= htmlspecialchars($appointment['id_appointment']) ?></p>
         <p><strong>Дата:</strong> <?= htmlspecialchars($appointment['date']) ?></p>
         <p><strong>Время:</strong> <?= $appointment['range_start'] ?> - <?= $appointment['range_end'] ?></p>
@@ -153,78 +156,80 @@ if (!empty($appointment['id_medical_history'])) {
         <p><strong>Адрес:</strong> <?= htmlspecialchars($appointment['address']) ?></p>
         <p><strong>ID направление:</strong> <?= htmlspecialchars($appointment['id_referral']) ?></p>
         
-        <?php if ($appointment['id_patient'] != 0 && $appointment['id_medical_history'] != 0): ?>
-            <h5>Результаты приема</h5>
-            <div class="mb-3">
-                <label class="form-label">Выберите болезнь</label>
-                <select class="form-select" name="disease_id" id="diseaseSelect" onchange="toggleDiseaseFields()">
-                    <option value="0">-- Создать новую болезнь --</option>
-                    <?php foreach ($diseases as $disease): ?>
-                        <option value="<?= $disease['id_disease'] ?>" 
-                            <?= ($currentDisease['id_disease'] ?? 0) == $disease['id_disease'] ? 'selected' : '' ?>>
-                            <?= htmlspecialchars($disease['name_of_disease']) ?>
-                        </option>
-                    <?php endforeach; ?>
-                </select>
-            </div>
-            
-            <div class="mb-3">
-                <label class="form-label">Область медицины</label>
-                <select class="form-select" name="id_field" required>
-                    <option value="">Выберите область</option>
-                    <?php 
-                    $fields = $conn->query("SELECT id_field, name_of_field FROM field_of_medicine");
-                    while ($field = $fields->fetch_assoc()): ?>
-                        <option value="<?= $field['id_field'] ?>" <?= ($field['id_field'] == ($history_data['id_field'] ?? 0)) ? 'selected' : '' ?>>
-                            <?= htmlspecialchars($field['name_of_field']) ?>
-                        </option>
-                    <?php endwhile; ?>
-                </select>
-            </div>
 
-            <div class="mb-3">
-                <label class="form-label">Жалобы</label>
-                <textarea class="form-control" id="complaintsAppointment" name="complaintsAppointment" rows="2"><?= htmlspecialchars($history_data['complaints'] ?? '') ?></textarea>
-            </div>
-            
-            <div class="mb-3">
-                <label class="form-label">Симптомы</label>
-                <input type="text" class="form-control" id="symptomsAppointment" name="symptomsAppointment" value="<?=htmlspecialchars($history_data['symptoms'] ?? '')?>">
-            </div>
-            <input type="hidden" name="id_medical_history" value="<?= htmlspecialchars($appointment['id_medical_history'] ?? 0) ?>">
-            <div class="mb-3">
-                <label class="form-label">Диагноз</label>
-                <input type="text" class="form-control" id="diagnosisAppointment" name="diagnosisAppointment" value="<?=htmlspecialchars($history_data['name_of_disease'] ?? '')?>">
-            </div>
-            
-            <div class="mb-3">
-                <label class="form-label">Рекомендации по лечению</label>
-                <textarea class="form-control" id="treatmentAppointment" name="treatmentAppointment" rows="3"><?= htmlspecialchars($history_data['treatment_recommendations'] ?? '')?></textarea>
-            </div>
-            
-            <div class="mb-3">
-                <label class="form-label">Назначенные препараты</label>
-                <textarea class="form-control" id="medicationsAppointment"  name="medicationsAppointment" rows="2"><?= htmlspecialchars($history_data['medicament'] ?? '')?></textarea>
-            </div>
-        <?php endif; ?> 
+            <?php if ($appointment['id_patient'] != 0) :
+                if ($appointment['id_medical_history'] != 0):?>
+                <h5>Результаты приема</h5>
+                <div class="mb-3">
+                    <label class="form-label">Выберите болезнь</label>
+                    <select class="form-select" name="disease_id" id="diseaseSelect" onchange="onDiseaseChange()">
+                        <option value="0">-- Создать новую болезнь --</option>
+                        <?php foreach ($diseases as $disease): ?>
+                            <option value="<?= $disease['id_disease'] ?>" 
+                                <?= ($currentDisease['id_disease'] ?? 0) == $disease['id_disease'] ? 'selected' : '' ?>>
+                                <?= htmlspecialchars($disease['name_of_disease']) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label">Область медицины</label>
+                    <select class="form-select" name="id_field" id="id_field" required>
+                        <option value="">Выберите область</option>
+                        <?php 
+                        $fields = $conn->query("SELECT id_field, name_of_field FROM field_of_medicine");
+                        while ($field = $fields->fetch_assoc()): ?>
+                            <option value="<?= $field['id_field'] ?>" <?= ($field['id_field'] == ($history_data['id_field'] ?? 0)) ? 'selected' : '' ?>>
+                                <?= htmlspecialchars($field['name_of_field']) ?>
+                            </option>
+                        <?php endwhile; ?>
+                    </select>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Жалобы</label>
+                    <textarea class="form-control" id="complaintsAppointment" name="complaintsAppointment" rows="2"><?= htmlspecialchars($history_data['complaints'] ?? '') ?></textarea>
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label">Симптомы</label>
+                    <input type="text" class="form-control" id="symptomsAppointment" name="symptomsAppointment" value="<?=htmlspecialchars($history_data['symptoms'] ?? '')?>">
+                </div>
+                <input type="hidden" name="id_medical_history" value="<?= htmlspecialchars($appointment['id_medical_history'] ?? 0) ?>">
+                <div class="mb-3">
+                    <label class="form-label">Диагноз</label>
+                    <input type="text" class="form-control" id="diagnosisAppointment" name="diagnosisAppointment" value="<?=htmlspecialchars($history_data['name_of_disease'] ?? '')?>">
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label">Рекомендации по лечению</label>
+                    <textarea class="form-control" id="treatmentAppointment" name="treatmentAppointment" rows="3"><?= htmlspecialchars($history_data['treatment_recommendations'] ?? '')?></textarea>
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label">Назначенные препараты</label>
+                    <textarea class="form-control" id="medicationsAppointment"  name="medicationsAppointment" rows="2"><?= htmlspecialchars($history_data['medicament'] ?? '')?></textarea>
+                </div>
+            <?php else :?>
+                <button type="button" class="btn btn-success me-2 fixed-height-btn" onclick="confirmAppointment(<?= $appointment['id_appointment'] ?>)">
+                            Подтвердить прием
+                        </button>
+            <?php endif; ?> 
+            <?php else :?>
+                <button type="button" class="btn btn-success me-2 fixed-height-btn" onclick="confirmAppointment(<?= $appointment['id_appointment'] ?>)">
+                    Подтвердить прием
+                </button>
+            <?php endif; ?> 
 
 
         <div class="d-flex justify-content-between mt-4">
             <div>
                 <?php 
-                $canCancel = ($appointment['id_patient'] != 0) && 
-                            (($appointment['date'] <= $currentDate) || 
-                            ($appointment['date'] == $currentDate && $appointment['range_start'] <= $currentTime));
+                $canCancel = ($appointment['id_patient'] != 0) && empty($appointment['id_medical_history']);
                 if ($canCancel): ?>
                     <button type="button" class="btn btn-danger me-2 fixed-height-btn" onclick="cancelAppointment(<?= $appointment['id_appointment'] ?>)">
                         Отменить запись
-                    </button>
-                <?php endif; ?> 
-            </div>
-            <div>
-                <?php if ($canCancel && $appointment['id_medical_history'] == 0 ): ?>
-                    <button type="button" class="btn btn-success me-2 fixed-height-btn" onclick="confirmAppointment(<?= $appointment['id_appointment'] ?>)">
-                        Подтвердить прием
                     </button>
                 <?php endif; ?>
             </div>
@@ -235,4 +240,5 @@ if (!empty($appointment['id_medical_history'])) {
             </div>
         </div>
     </form>
+    </div>
 </div>
