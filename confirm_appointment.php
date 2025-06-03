@@ -2,74 +2,39 @@
 header('Content-Type: application/json');
 include 'bd.php';
 
+function callProcedure($conn, $sql) {
+    $data = [];
+    if ($conn->multi_query($sql)) {
+        do {
+            if ($result = $conn->store_result()) {
+                $data = $result->fetch_all(MYSQLI_ASSOC);
+                $result->free();
+            }
+        } while ($conn->more_results() && $conn->next_result());
+    } else {
+        // Логируем ошибку и возвращаем сообщение об ошибке
+        error_log("MySQL error: " . $conn->error);
+        return ['success' => false, 'message' => 'Ошибка выполнения процедуры: ' . $conn->error];
+    }
+    return $data;
+}
+
 $appointment_id = intval($_POST['appointment_id'] ?? 0);
 if ($appointment_id <= 0) {
     echo json_encode(['success' => false, 'message' => 'Неверный ID записи']);
     exit;
 }
 
-// Получаем данные о записи
-$stmt = $conn->prepare("SELECT id_patient, id_medical_history, id_doctor FROM appointment WHERE id_appointment = ?");
-$stmt->bind_param("i", $appointment_id);
-$stmt->execute();
-$appointment = $stmt->get_result()->fetch_assoc();
+// Вызов процедуры
+$history_id = callProcedure($conn, "CALL createMedicalHistory($appointment_id)");
 
-if (!$appointment) {
-    echo json_encode(['success' => false, 'message' => 'Запись не найдена']);
+// Проверяем, есть ли ошибка
+if (isset($history_id['success']) && !$history_id['success']) {
+    echo json_encode($history_id);
     exit;
 }
 
-if ($appointment['id_medical_history'] != 0) {
-    echo json_encode(['success' => false, 'message' => 'История болезни уже создана']);
-    exit;
-}
+// Если процедура выполнена успешно, возвращаем ID истории болезни
+echo json_encode(['success' => true, 'history_id' => $history_id[0]['history_id'] ?? null]);
 
-// Проверяем существование врача
-$checkDoctor = $conn->prepare("SELECT id_doctor FROM staff WHERE id_doctor = ?");
-$checkDoctor->bind_param("i", $appointment['id_doctor']);
-$checkDoctor->execute();
-if (!$checkDoctor->get_result()->fetch_assoc()) {
-    echo json_encode(['success' => false, 'message' => 'Врач не существует']);
-    exit;
-}
-
-// Проверяем пациента, если он есть
-if ($appointment['id_patient'] > 0) {
-    $checkPatient = $conn->prepare("SELECT id_patient FROM information_about_patient WHERE id_patient = ?");
-    $checkPatient->bind_param("i", $appointment['id_patient']);
-    $checkPatient->execute();
-    if (!$checkPatient->get_result()->fetch_assoc()) {
-        echo json_encode(['success' => false, 'message' => 'Пациент не существует']);
-        exit;
-    }
-}
-
-// Начинаем транзакцию
-$conn->begin_transaction();
-
-try {
-    // Создаем медицинскую историю без болезни (id_disease = NULL)
-    $stmt = $conn->prepare("INSERT INTO medical_history (complaints, id_disease) VALUES ('', NULL)");
-    $stmt->execute();
-    $history_id = $conn->insert_id;
-
-    // Обновляем запись с медицинской историей
-    $stmt = $conn->prepare("UPDATE appointment SET id_medical_history = ? WHERE id_appointment = ?");
-    $stmt->bind_param("ii", $history_id, $appointment_id);
-    $stmt->execute();
-
-    $conn->commit();
-    
-    echo json_encode([
-        'success' => true, 
-        'message' => 'История болезни создана', 
-        'history_id' => $history_id
-    ]);
-} catch (Exception $e) {
-    $conn->rollback();
-    echo json_encode([
-        'success' => false, 
-        'message' => 'Ошибка при создании истории болезни: ' . $e->getMessage()
-    ]);
-}
 ?>

@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Хост: 127.0.0.1:3306
--- Время создания: Май 23 2025 г., 21:20
+-- Время создания: Июн 03 2025 г., 17:35
 -- Версия сервера: 5.6.51
 -- Версия PHP: 7.2.34
 
@@ -38,6 +38,74 @@ CREATE DEFINER=`root`@`%` PROCEDURE `cabinet_philter` (IN `department_id` INT)  
     DEALLOCATE PREPARE stmt;
 END$$
 
+CREATE DEFINER=`root`@`%` PROCEDURE `checkActiveAppointment` (IN `patient_id` INT, IN `doctor_id` INT, IN `appointment_id` INT)   BEGIN
+ SELECT COUNT(*) AS count 
+        FROM appointment 
+        JOIN staff ON appointment.id_doctor = staff.id_doctor 
+        WHERE appointment.id_patient = patient_id 
+        AND appointment.id_appointment != appointment_id
+        AND (
+            appointment.date > CURDATE() 
+            OR (
+                appointment.date = CURDATE() 
+                AND EXISTS (
+                    SELECT 1 
+                    FROM operating_ranges 
+                    WHERE operating_ranges.id_ranges = appointment.id_ranges 
+                    AND operating_ranges.range_start > CURTIME()
+                )
+            )
+        ) 
+        AND staff.id_department = (SELECT id_department FROM staff WHERE id_doctor = doctor_id);
+END$$
+
+CREATE DEFINER=`root`@`%` PROCEDURE `checkDoctor` (IN `appointment_id` INT)   BEGIN
+SELECT id_doctor FROM appointment WHERE id_appointment = appointment_id;
+END$$
+
+CREATE DEFINER=`root`@`%` PROCEDURE `checkPatient` (IN `patient_id` INT)   BEGIN
+SELECT id_patient FROM information_about_patient WHERE id_patient = patient_id;
+END$$
+
+CREATE DEFINER=`root`@`%` PROCEDURE `createMedicalHistory` (IN `appointment_id` INT)   BEGIN
+    DECLARE patient_id INT;
+    DECLARE doctor_id INT;
+    DECLARE id_medical_history INT;
+    SELECT id_patient, id_medical_history, id_doctor INTO patient_id, id_medical_history, doctor_id
+    FROM appointment WHERE id_appointment = appointment_id;
+    IF id_medical_history IS NOT NULL THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'История болезни уже создана';
+    END IF;
+    IF doctor_id IS NULL THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Врач не существует';
+    END IF;
+    IF patient_id > 0 THEN
+        IF NOT EXISTS (SELECT 1 FROM information_about_patient WHERE id_patient = patient_id) THEN
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Пациент не существует';
+        END IF;
+    END IF;
+    INSERT INTO medical_history (complaints, id_disease) VALUES ('', NULL);
+    SET id_medical_history = LAST_INSERT_ID();
+    UPDATE appointment SET id_medical_history = id_medical_history WHERE id_appointment = appointment_id;
+    SELECT id_medical_history AS history_id;
+END$$
+
+CREATE DEFINER=`root`@`%` PROCEDURE `delete_doctor` (IN `doctor_id` INT)   BEGIN
+DELETE FROM connection_qualif_improve WHERE id_doctors=doctor_id;
+DELETE FROM connection_education WHERE id_doctor=doctor_id;
+DELETE FROM staff WHERE id_doctor=doctor_id;
+END$$
+
+CREATE DEFINER=`root`@`%` PROCEDURE `delete_education` (IN `education_id` INT)   BEGIN
+DELETE FROM connection_education WHERE id_education=education_id;
+DELETE FROM education WHERE id_education=education_id;
+END$$
+
+CREATE DEFINER=`root`@`%` PROCEDURE `delete_qualification` (IN `qualif_id` INT)   BEGIN
+DELETE FROM connection_qualif_improve WHERE id_qualif_improve=qualif_id;
+DELETE FROM qualification_improvement WHERE id_qualif_improv=qualif_id;
+END$$
+
 CREATE DEFINER=`root`@`%` PROCEDURE `department_philter` (IN `polyclinic_id` INT)   BEGIN
     IF polyclinic_id = 0 THEN
         SET @sql_statement = 'SELECT department.id_department, department.name_department FROM department';
@@ -66,87 +134,6 @@ CREATE DEFINER=`root`@`%` PROCEDURE `doctor_philter` (IN `department_id` INT)   
     PREPARE stmt FROM @sql_doctor;
     EXECUTE stmt;
 end$$
-
-CREATE DEFINER=`root`@`%` PROCEDURE `getreports1Table` (IN `city` VARCHAR(255), IN `gender` VARCHAR(10), IN `id_field` INT, IN `age_start` INT, IN `age_end` INT, IN `date_start` DATE, IN `date_end` DATE, IN `min_kol` INT, IN `top_n` INT, IN `group_n` INT)   BEGIN 
-	SET @age_start=age_start;
-    SET @age_end = age_end;
-    SET @podzapros = 'SELECT disease.name_of_disease, COUNT(appointment.id_appointment) as disease_kol, 
-                      YEAR(appointment.date) as appointment_year, MONTH(appointment.date) as appointment_month,
-                      FLOOR(DATEDIFF(CURDATE(), information_about_patient.birthday) / 365.25) AS age
-                      FROM disease
-                      JOIN medical_history ON medical_history.id_disease = disease.id_disease
-                      JOIN appointment ON appointment.id_medical_history = medical_history.id_history
-                      JOIN information_about_patient ON appointment.id_patient = information_about_patient.id_patient
-                      JOIN field_of_medicine ON disease.id_field = field_of_medicine.id_field
-                      WHERE FLOOR(DATEDIFF(CURDATE(), information_about_patient.birthday) / 365.25) BETWEEN @age_start AND @age_end';
-    
-    IF city IS NOT NULL AND city != 'all' THEN
-        SET @podzapros = CONCAT(@podzapros, ' AND information_about_patient.address LIKE "%', city, '%"'); 
-    END IF;
-    
-    IF gender IS NOT NULL AND gender != 'all' THEN
-        SET @podzapros = CONCAT(@podzapros, ' AND information_about_patient.gender = "', gender, '"'); 
-    END IF;
-    
-    IF id_field IS NOT NULL AND id_field != 0 THEN
-        SET @podzapros = CONCAT(@podzapros, ' AND disease.id_field = ', id_field); 
-    END IF;
-    
-    IF date_start IS NOT NULL THEN
-        SET @podzapros = CONCAT(@podzapros, ' AND appointment.date >= "', date_start, '"'); 
-    END IF;
-    
-    IF date_end IS NOT NULL THEN
-        SET @podzapros = CONCAT(@podzapros, ' AND appointment.date <= "', date_end, '"'); 
-    END IF;
-    
-    SET @podzapros = CONCAT(@podzapros, ' GROUP BY 
-                          disease.name_of_disease,
-                          appointment_year,
-                          appointment_month');
-    
-    IF min_kol IS NOT NULL AND min_kol != 0 THEN
-        SET @podzapros = CONCAT(@podzapros, ' HAVING disease_kol >= ', min_kol);
-    END IF;
-    
-    SET @sql = CONCAT('SELECT name_of_disease, SUM(disease_kol) AS total_appointments, appointment_year, 
-                      (SUM(disease_kol) / (SELECT SUM(disease_kol) FROM (', @podzapros, ') AS t)) * 100 AS procent 
-                      FROM (', @podzapros, ') AS PODZAPROS');
-    
-    IF group_n IS NOT NULL AND group_n = 1 THEN
-        IF top_n IS NOT NULL AND top_n != 0 THEN
-            SET @sql = CONCAT(@sql, ' GROUP BY name_of_disease, appointment_year
-                          ORDER BY total_appointments DESC
-                          LIMIT ', top_n);
-        ELSE
-            SET @sql = CONCAT(@sql, '   GROUP BY name_of_disease, appointment_year
-                          ORDER BY total_appointments DESC');
-        END IF;
-    ELSEIF group_n IS NOT NULL AND group_n = 2 THEN
-        IF top_n IS NOT NULL AND top_n != 0 THEN
-            SET @sql = CONCAT(@sql, ' AND appointment_year=NULL GROUP BY name_of_disease, appointment_year, appointment_month
-                          ORDER BY total_appointments DESC
-                          LIMIT ', top_n);
-        ELSE 
-            SET @sql = CONCAT(@sql, ' AND appointment_year=NULL GROUP BY name_of_disease, appointment_year, appointment_month
-                          ORDER BY total_appointments DESC');
-        END IF;
-    ELSE
-    IF top_n IS NOT NULL AND top_n != 0 THEN
-        SET @sql = CONCAT(@sql, ' AND appointment_year=NULL AND appointment_month=0 GROUP BY name_of_disease
-                      ORDER BY total_appointments DESC
-                      LIMIT ', top_n);
-    ELSE 
-        SET @sql = CONCAT(@sql, ' AND 
-appointment_year=NULL AND appointment_month=0 GROUP BY name_of_disease
-                      ORDER BY total_appointments DESC');
-    END IF;
-END IF;
-    
-    PREPARE stmt FROM @sql;
-    EXECUTE stmt;
-    DEALLOCATE PREPARE stmt;  
-END$$
 
 CREATE DEFINER=`root`@`%` PROCEDURE `getreportsTable` (IN `city` VARCHAR(255), IN `gender` VARCHAR(255), IN `id_field` INT, IN `age_partition` INT, IN `date_start` DATE, IN `date_end` DATE, IN `min_kol` INT, IN `group_1` INT, IN `group_2` INT, IN `group_3` INT)   BEGIN 
 	SET @age_partition=age_partition;
@@ -201,7 +188,7 @@ CREATE DEFINER=`root`@`%` PROCEDURE `getreportsTable` (IN `city` VARCHAR(255), I
         SET @podzapros = CONCAT(@podzapros, ' HAVING disease_kol >= ', min_kol);
     END IF;
     
-    SET @sql = CONCAT('SELECT age_group, name_of_disease, SUM(disease_kol) AS total_appointments, appointment_year, 
+    SET @sql = CONCAT('SELECT age_group, name_of_disease, SUM(disease_kol) AS total_appointments, appointment_year, appointment_month, 
                       (SUM(disease_kol) / (SELECT SUM(disease_kol) FROM (', @podzapros, ') AS t)) * 100 AS procent, gender, city, birth_year
                       FROM (', @podzapros, ') AS PODZAPROS');
     
@@ -289,8 +276,8 @@ CREATE DEFINER=`root`@`%` PROCEDURE `get_appointments_table` (IN `polyclinic_id`
         SET @sql_appointments = CONCAT(@sql_appointments, ' AND appointment.id_doctor = ', doctor_id); 
     END IF;
 
-    IF date_start IS NOT NULL AND date_end IS NOT NULL AND date_start != NULL AND date_end != NULL THEN
-        SET @sql_appointments = CONCAT(@sql_appointments, ' AND appointment.date BETWEEN "', date_start, '" AND "', date_end, '"'); 
+    IF date_start IS NOT NULL AND date_end IS NOT NULL THEN
+        SET @sql_appointments = CONCAT(@sql_appointments, ' AND (appointment.date BETWEEN "', date_start, '" AND "', date_end, '")'); 
     END IF;   
     
     IF status = 'busy' THEN
@@ -324,6 +311,49 @@ CREATE DEFINER=`root`@`%` PROCEDURE `get_cities` (IN `table_name` VARCHAR(255)) 
         WHERE address LIKE ''г.%'';');
 
     PREPARE stmt FROM @sql;
+    EXECUTE stmt;
+    DEALLOCATE PREPARE stmt;
+END$$
+
+CREATE DEFINER=`root`@`%` PROCEDURE `get_disease` ()   BEGIN
+SELECT id_disease, name_of_disease FROM disease;
+END$$
+
+CREATE DEFINER=`root`@`%` PROCEDURE `get_doctor` (IN `doctor_id` INT)   BEGIN
+    SET @doctor_data = CONCAT('SELECT DISTINCT staff.id_doctor, staff.full_name, staff.birthday, staff.post, staff.status, 
+                               staff.address, staff.phone_number, staff.id_department, department.name_department, 
+                               info_about_polyclinic.name_polyclinic, info_about_polyclinic.id_polyclinic 
+                        FROM staff 
+                        JOIN department ON department.id_department = staff.id_department
+                        JOIN connection ON connection.id_department = department.id_department
+                        JOIN info_about_polyclinic ON info_about_polyclinic.id_polyclinic = connection.id_polyclinic
+                        WHERE staff.id_doctor = ', doctor_id);
+    PREPARE stmt FROM @doctor_data;
+    EXECUTE stmt;
+    DEALLOCATE PREPARE stmt;
+
+    SET @education = CONCAT('SELECT education.id_education, education.work_experience, education.type_of_education,  
+                             education.educational_institution, education.year_of_start, education.year_of_end,
+                             education.id_field as ed_id_field, ed_field.name_of_field AS ed_name_of_field
+                      FROM staff 
+                      LEFT JOIN connection_education ON connection_education.id_doctor = staff.id_doctor
+                      LEFT JOIN education ON education.id_education = connection_education.id_education
+                      LEFT JOIN field_of_medicine as ed_field ON education.id_field = ed_field.id_field
+                      WHERE staff.id_doctor = ', doctor_id);
+    PREPARE stmt FROM @education;
+    EXECUTE stmt;
+    DEALLOCATE PREPARE stmt;
+
+    SET @qualifications = CONCAT('SELECT qualification_improvement.id_qualif_improv, qualification_improvement.name as qe_name, 
+                                  qualification_improvement.type as qe_type, qualification_improvement.name_of_organizator, 
+                                  qualification_improvement.date, qualification_improvement.id_field as qe_id_field, 
+                                  qe_field.name_of_field AS qe_name_of_field
+                           FROM staff 
+                           LEFT JOIN connection_qualif_improve ON connection_qualif_improve.id_doctors = staff.id_doctor
+                           LEFT JOIN qualification_improvement ON connection_qualif_improve.id_qualif_improve = qualification_improvement.id_qualif_improv
+                           LEFT JOIN field_of_medicine as qe_field ON qualification_improvement.id_field = qe_field.id_field
+                           WHERE staff.id_doctor = ', doctor_id);
+    PREPARE stmt FROM @qualifications;
     EXECUTE stmt;
     DEALLOCATE PREPARE stmt;
 END$$
@@ -362,6 +392,73 @@ CREATE DEFINER=`root`@`%` PROCEDURE `get_doctors_table` (IN `polyclinic_id` INT,
     SET @sql_doctors = CONCAT(@sql_doctors, ' GROUP BY staff.id_doctor');
 
     PREPARE stmt FROM @sql_doctors;
+    EXECUTE stmt;
+    DEALLOCATE PREPARE stmt;
+END$$
+
+CREATE DEFINER=`root`@`%` PROCEDURE `get_info_about_polyclinic_table` (IN `city` INT, IN `polyclinic_id` INT)   BEGIN
+    SET @sql_info_polyclinics = 'SELECT 
+    info_about_polyclinic.id_polyclinic, 
+    info_about_polyclinic.name_polyclinic, 
+    info_about_polyclinic.address,
+    GROUP_CONCAT(
+        CASE 
+            WHEN day_of_week = 0 THEN ''Вс: выходной''
+            WHEN day_of_week = 1 THEN CONCAT(''Пн: '', start_time, ''-'', end_time)
+            WHEN day_of_week = 2 THEN CONCAT(''Вт: '', start_time, ''-'', end_time)
+            WHEN day_of_week = 3 THEN CONCAT(''Ср: '', start_time, ''-'', end_time)
+            WHEN day_of_week = 4 THEN CONCAT(''Чт: '', start_time, ''-'', end_time)
+            WHEN day_of_week = 5 THEN CONCAT(''Пт: '', start_time, ''-'', end_time)
+            WHEN day_of_week = 6 THEN CONCAT(''Сб: '', start_time, ''-'', end_time)
+        END
+    ) AS work_schedule
+FROM 
+    info_about_polyclinic 
+JOIN 
+    polyclinic_schedule ON polyclinic_schedule.polyclinic_id = info_about_polyclinic.id_polyclinic
+    WHERE 1=1';
+
+    IF polyclinic_id IS NOT NULL AND polyclinic_id != 0 THEN
+        SET @sql_info_polyclinics = CONCAT(@sql_info_polyclinics, ' AND info_about_polyclinic.id_polyclinic = ', polyclinic_id); 
+    END IF;
+
+    IF city IS NOT NULL AND city != 'all' THEN
+        SET @sql_info_polyclinics = CONCAT(@sql_info_polyclinics, ' AND info_about_polyclinic.address LIKE ''%', department_id, '%'''); 
+    END IF;
+
+    SET @sql_info_polyclinics = CONCAT(@sql_info_polyclinics, ' GROUP BY info_about_polyclinic.id_polyclinic;');
+
+    PREPARE stmt FROM @sql_info_polyclinics;
+    EXECUTE stmt;
+    DEALLOCATE PREPARE stmt;
+END$$
+
+CREATE DEFINER=`root`@`%` PROCEDURE `get_patient` (IN `patient_id` INT)   BEGIN
+    SET @patient_data = CONCAT('SELECT * FROM `information_about_patient` WHERE id_patient = ', patient_id);
+    PREPARE stmt FROM @patient_data;
+    EXECUTE stmt;
+    DEALLOCATE PREPARE stmt;
+
+    SET @appointments = CONCAT('SELECT appointment.id_appointment, appointment.date, 
+                        staff.full_name AS doctor_name, staff.post AS doctor_post, 
+                        cabinet.number_of_cabinet,
+                        operating_ranges.range_start, operating_ranges.range_end
+                        FROM appointment 
+                        JOIN staff ON staff.id_doctor = appointment.id_doctor
+                        JOIN cabinet ON cabinet.id_cabinet = appointment.id_cabinet
+                        JOIN operating_ranges ON operating_ranges.id_ranges = appointment.id_ranges
+                        WHERE appointment.id_patient =', patient_id);
+    PREPARE stmt FROM @appointments;
+    EXECUTE stmt;
+    DEALLOCATE PREPARE stmt;
+
+    SET @referrals = CONCAT('SELECT referral.id_referral, referral.date_of_start, DATE_ADD(referral.date_of_start, INTERVAL referral.duration DAY) AS date_of_end, referral.id_patient, referral.id_doctor, 
+                    staff_doctor.full_name AS doctorName,staff_doctor.post AS DoctorPost, referral.refrerral_doctor, staff_referral.full_name AS referralDoctorName , staff_referral.post AS referralDoctorPost
+                    FROM `referral`
+                    JOIN staff AS staff_doctor ON staff_doctor.id_doctor = referral.id_doctor
+                    JOIN staff AS staff_referral ON staff_referral.id_doctor = referral.refrerral_doctor
+                    WHERE referral.id_patient = ', patient_id);
+    PREPARE stmt FROM @referrals;
     EXECUTE stmt;
     DEALLOCATE PREPARE stmt;
 END$$
@@ -407,6 +504,55 @@ CREATE DEFINER=`root`@`%` PROCEDURE `get_patients_table` (IN `birthday_date` DAT
     DEALLOCATE PREPARE stmt;
 END$$
 
+CREATE DEFINER=`root`@`%` PROCEDURE `get_referral_table` (IN `polyclinic_id` INT, IN `department_id` INT, IN `doctor_id` INT, IN `date_start` DATE, IN `date_end` DATE, IN `status_ref` INT)   BEGIN
+    SET @sql = 'SELECT 
+        referral.id_referral, 
+        referral.date_of_start, 
+        DATE_ADD(referral.date_of_start, INTERVAL referral.duration DAY) AS date_of_end, 
+        information_about_patient.full_name, 
+        staff_doctor.id_doctor AS id_doctor,
+        staff_doctor.full_name AS doctor,
+        staff_doctor.post AS doctor_post,
+        staff_referral.id_doctor AS id_doctor_referral,
+        staff_referral.full_name AS doctor_referral,
+        staff_referral.post AS doctor_referral_post
+    FROM referral
+    JOIN information_about_patient ON information_about_patient.id_patient = referral.id_patient
+    JOIN staff AS staff_doctor ON staff_doctor.id_doctor = referral.id_doctor
+    JOIN staff AS staff_referral ON staff_referral.id_doctor = referral.refrerral_doctor
+    JOIN department ON department.id_department = staff_referral.id_department
+    JOIN connection ON connection.id_department = department.id_department
+    JOIN info_about_polyclinic ON info_about_polyclinic.id_polyclinic = connection.id_polyclinic
+    WHERE 1=1';
+
+    IF polyclinic_id IS NOT NULL AND polyclinic_id != 0 THEN
+        SET @sql = CONCAT(@sql, ' AND info_about_polyclinic.id_polyclinic = ', polyclinic_id); 
+    END IF;
+    
+    IF department_id IS NOT NULL AND department_id != 0 THEN
+        SET @sql = CONCAT(@sql, ' AND department.id_department = ', department_id); 
+    END IF;
+    
+    IF doctor_id IS NOT NULL AND doctor_id != 0 THEN
+        SET @sql = CONCAT(@sql, ' AND referral.refrerral_doctor = ', doctor_id); 
+    END IF;
+
+    IF date_start IS NOT NULL AND date_end IS NOT NULL THEN
+        SET @sql = CONCAT(@sql, ' AND referral.date_of_start >= "', date_start, '" AND DATE_ADD(referral.date_of_start, INTERVAL referral.duration DAY) <= "', date_end, '"'); 
+    END IF;   
+    
+    IF status_ref = 1 THEN
+        SET @sql = CONCAT(@sql, ' AND DATE_ADD(referral.date_of_start, INTERVAL referral.duration DAY) > CURDATE()'); 
+    END IF;
+    IF status_ref = 2 THEN
+        SET @sql = CONCAT(@sql, ' AND DATE_ADD(referral.date_of_start, INTERVAL referral.duration DAY) <= CURDATE()'); 
+    END IF;
+
+    PREPARE stmt FROM @sql;
+    EXECUTE stmt;
+    DEALLOCATE PREPARE stmt;
+END$$
+
 CREATE DEFINER=`root`@`%` PROCEDURE `get_street` (IN `table_name` VARCHAR(255))   BEGIN
     SET @sql = CONCAT('SELECT DISTINCT
     TRIM(
@@ -428,8 +574,119 @@ CREATE DEFINER=`root`@`%` PROCEDURE `get_street` (IN `table_name` VARCHAR(255)) 
     DEALLOCATE PREPARE stmt;
 END$$
 
+CREATE DEFINER=`root`@`%` PROCEDURE `insertAppointments` (IN `doctorId` INT, IN `cabinetId` INT, IN `appointmentTimeStart` VARCHAR(255), IN `appointmentTimeEnd` VARCHAR(255), IN `appointmentDate` DATE)   BEGIN
+    DECLARE rangeId INT;
+    SELECT id_ranges INTO rangeId
+    FROM operating_ranges
+    WHERE range_start = appointmentTimeStart AND range_end = appointmentTimeEnd;
+    IF rangeId IS NULL THEN
+        INSERT INTO operating_ranges (range_start, range_end)
+        VALUES (appointmentTimeStart, appointmentTimeEnd);
+        SET rangeId = LAST_INSERT_ID();
+    END IF;
+    INSERT INTO appointments (appointmentDate, doctorId, rangeId, cabinetId)
+    VALUES (appointmentDate, doctorId, rangeId, cabinetId);
+    SELECT 'Успешно создано записей' AS message;
+END$$
+
+CREATE DEFINER=`root`@`%` PROCEDURE `insert_Doctor` (IN `fullName` VARCHAR(255), IN `birthDate` DATE, IN `position` VARCHAR(90), IN `statusValue` INT, IN `doctorAdress` VARCHAR(255), IN `phoneNumber` VARCHAR(90), IN `id_department` INT, IN `experience` INT, IN `educationType` VARCHAR(20), IN `university` VARCHAR(255), IN `startYear` INT, IN `endYear` INT, IN `id_medicalField` INT, IN `qualif_improv_name` VARCHAR(180), IN `qualif_improv_type` VARCHAR(90), `qualif_improv_nameOrganization` VARCHAR(255), IN `qualif_improv_date` DATE, IN `id_medicalField_qe` INT)   BEGIN
+	DECLARE lastDoctorId INT;
+    DECLARE lastEducationId INT;
+    DECLARE lastQeId INT;
+
+    INSERT INTO `staff` (`full_name`, `birthday`, `post`, `status`, `address`, `phone_number`, `id_department`)
+    VALUES (fullName, birthDate, position, statusValue, doctorAdress, phoneNumber, id_department);
+    SET lastDoctorId = LAST_INSERT_ID();
+
+    IF experience IS NOT NULL AND educationType IS NOT NULL AND university IS NOT NULL AND startYear IS NOT NULL AND endYear IS NOT NULL AND id_medicalField IS NOT NULL THEN
+        INSERT INTO `education` (`work_experience`, `type_of_education`, `educational_institution`, `year_of_start`, `year_of_end`, `id_field`)
+        VALUES (experience, educationType, university, startYear, endYear, id_medicalField);
+        SET lastEducationId = LAST_INSERT_ID();
+        INSERT INTO `connection_education` (`id_doctor`, `id_education`) VALUES (lastDoctorId, lastEducationId);
+    END IF;
+
+    IF qualif_improv_name IS NOT NULL AND qualif_improv_type IS NOT NULL AND qualif_improv_nameOrganization IS NOT NULL AND qualif_improv_date IS NOT NULL AND id_medicalField_qe IS NOT NULL THEN
+        INSERT INTO `qualification_improvement` (`name`, `type`, `name_of_organizator`, `date`, `id_field`)
+        VALUES (qualif_improv_name, qualif_improv_type, qualif_improv_nameOrganization, qualif_improv_date, id_medicalField_qe);
+        SET lastQeId = LAST_INSERT_ID();
+        INSERT INTO `connection_qualif_improve` (`id_doctors`, `id_qualif_improve`) VALUES (lastDoctorId, lastQeId);
+    END IF;
+END$$
+
+CREATE DEFINER=`root`@`%` PROCEDURE `insert_education` (IN `work_experience` INT, IN `type` VARCHAR(20), IN `institution` VARCHAR(255), IN `start_year` INT(11), IN `end_year` INT(11), IN `field_id` INT)   BEGIN
+INSERT INTO education (work_experience, type_of_education, educational_institution, year_of_start, year_of_end, id_field) 
+VALUES (work_experience, type, institution, start_year, end_year, field_id);
+END$$
+
+CREATE DEFINER=`root`@`%` PROCEDURE `insert_qualification` (IN `name` VARCHAR(180), IN `type` VARCHAR(90), IN `organizator` VARCHAR(255), IN `date` DATE, IN `field_id` INT)   BEGIN
+INSERT INTO qualification_improvement (name, type, name_of_organizator, date, id_field) 
+VALUES (name, type, organizator, date, field_id);
+END$$
+
 CREATE DEFINER=`root`@`%` PROCEDURE `polyclinic_philter` ()  COMMENT 'Процедура для вывода всех поликлиник' BEGIN
 	SELECT id_polyclinic, name_polyclinic FROM info_about_polyclinic;
+END$$
+
+CREATE DEFINER=`root`@`%` PROCEDURE `updateAppointment` (IN `doctor_id` INT, IN `patient_id` INT, IN `cabinet_id` INT, IN `appointment_id` INT)   BEGIN
+UPDATE appointment SET id_doctor=doctor_id, id_patient=patient_id, id_cabinet=cabinet_id WHERE id_appointment=appointment_id;
+END$$
+
+CREATE DEFINER=`root`@`%` PROCEDURE `updateMedicalHistory_and_disease` (IN `p_complaints` VARCHAR(255), IN `p_symptoms` VARCHAR(255), IN `p_diagnosis` VARCHAR(255), IN `p_treatment` VARCHAR(255), IN `p_medications` VARCHAR(255), IN `p_field_id` INT, IN `p_disease_id` INT, IN `p_history_id` INT, IN `p_appointment_id` INT)   BEGIN
+    DECLARE v_disease_id INT;
+    DECLARE v_history_id INT;
+    
+    -- Initialize variables with input parameters
+    SET v_disease_id = p_disease_id;
+    SET v_history_id = p_history_id;
+    
+    -- Check if we're using existing disease or creating new one
+    IF p_disease_id > 0 THEN 
+        -- Verify disease exists
+        IF NOT EXISTS (SELECT 1 FROM disease WHERE id_disease = p_disease_id) THEN
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Указанная болезнь не существует';
+        END IF;
+    ELSE 
+        -- Validate field_id when creating new disease
+        IF p_field_id <= 0 THEN
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Не выбрана область медицины';
+        END IF;
+        
+        -- Create new disease
+        INSERT INTO disease (name_of_disease, symptoms, treatment_recommendations, medicament, id_field)
+        VALUES (p_diagnosis, p_symptoms, p_treatment, p_medications, p_field_id);
+        
+        SET v_disease_id = LAST_INSERT_ID();
+    END IF;
+
+    -- Update or create medical history
+    IF p_history_id != 0 THEN
+        UPDATE medical_history SET 
+            complaints = p_complaints, 
+            id_disease = v_disease_id 
+        WHERE id_history = p_history_id;
+    ELSE
+        INSERT INTO medical_history (complaints, id_disease) 
+        VALUES (p_complaints, v_disease_id);
+        
+        SET v_history_id = LAST_INSERT_ID();
+    END IF;
+
+    -- Link to appointment
+    UPDATE appointment SET id_medical_history = v_history_id 
+    WHERE id_appointment = p_appointment_id;
+END$$
+
+CREATE DEFINER=`root`@`%` PROCEDURE `update_doctor` (IN `full_name` VARCHAR(255), IN `birthday` DATE, IN `phone_number` VARCHAR(90), IN `address` VARCHAR(255), IN `post` VARCHAR(90), IN `status` TINYINT(11), IN `id_department` INT, IN `doctor_id` INT)   BEGIN
+UPDATE staff SET full_name=full_name, 	birthday=birthday, phone_number=phone_number, address=address, post=post, 	status=status, id_department=id_department WHERE id_doctor=doctor_id;
+END$$
+
+CREATE DEFINER=`root`@`%` PROCEDURE `update_education` (IN `work_experience` INT, IN `type` VARCHAR(20), IN `institution` VARCHAR(255), IN `start_year` INT(11), IN `end_year` INT(11), IN `field_id` INT, IN `education_id` INT)   BEGIN
+UPDATE education SET work_experience=work_experience, type_of_education=type, educational_institution=institution, 
+year_of_start=start_year, year_of_end=end_year, id_field=field_id WHERE id_education=education_id;
+END$$
+
+CREATE DEFINER=`root`@`%` PROCEDURE `update_qualification` (IN `name` VARCHAR(180), IN `type` VARCHAR(90), IN `organizator` VARCHAR(255), IN `date` DATE, IN `field_id` INT, IN `qualif_id` INT)   BEGIN
+UPDATE qualification_improvement SET name=name, type=type, name_of_organizator=organizator, date=date, id_field=field_id WHERE id_qualif_improv=qualif_id;
 END$$
 
 DELIMITER ;
@@ -456,13 +713,13 @@ CREATE TABLE `appointment` (
 --
 
 INSERT INTO `appointment` (`id_appointment`, `date`, `id_doctor`, `id_ranges`, `id_patient`, `id_cabinet`, `id_referral`, `id_medical_history`) VALUES
-(1, '2023-10-01', 1, 1, 1, 1, NULL, 1),
-(2, '2023-10-02', 1, 2, 60, 1, NULL, 2),
+(1, '2023-10-01', 1, 1, 1, 1, NULL, 28),
+(2, '2023-10-02', 1, 2, 60, 1, NULL, 27),
 (3, '2023-10-03', 9, 1, 61, 5, NULL, 3),
 (4, '2023-10-04', 14, 5, 62, 7, NULL, 4),
 (5, '2023-10-05', 17, 2, 63, 1, NULL, 5),
 (6, '2023-10-06', 3, 10, 64, 1, NULL, 6),
-(7, '2023-10-07', 4, 22, 65, 1, NULL, 7),
+(7, '2023-10-07', 4, 22, 65, 1, NULL, 47),
 (8, '2023-10-08', 2, 13, 66, 2, NULL, 8),
 (9, '2023-10-09', 29, 40, 67, 17, NULL, 9),
 (10, '2023-10-10', 32, 20, 68, 19, NULL, 10),
@@ -474,11 +731,11 @@ INSERT INTO `appointment` (`id_appointment`, `date`, `id_doctor`, `id_ranges`, `
 (16, '2023-10-16', 2, 13, 70, 2, NULL, 16),
 (17, '2023-10-17', 30, 23, 88, 18, NULL, 17),
 (18, '2023-10-18', 32, 18, 84, 20, NULL, 18),
-(19, '2023-10-19', 2, 13, 79, 2, NULL, 19),
+(19, '2023-10-19', 2, 13, 79, 2, NULL, 26),
 (20, '2023-10-20', 6, 37, 74, 4, NULL, 20),
-(50, '2025-05-26', 9, 49, 68, 5, NULL, NULL),
+(50, '2025-05-26', 9, 49, NULL, 5, NULL, NULL),
 (51, '2025-05-26', 9, 50, NULL, 5, NULL, NULL),
-(52, '2025-05-26', 9, 51, NULL, 5, NULL, NULL),
+(52, '2025-05-26', 9, 51, 70, 5, NULL, NULL),
 (53, '2025-05-26', 9, 52, NULL, 5, NULL, NULL),
 (54, '2025-05-27', 9, 49, NULL, 5, NULL, NULL),
 (55, '2025-05-27', 9, 50, NULL, 5, NULL, NULL),
@@ -487,7 +744,7 @@ INSERT INTO `appointment` (`id_appointment`, `date`, `id_doctor`, `id_ranges`, `
 (58, '2025-05-28', 9, 49, NULL, 5, NULL, NULL),
 (59, '2025-05-28', 9, 50, NULL, 5, NULL, NULL),
 (60, '2025-05-28', 9, 51, NULL, 5, NULL, NULL),
-(61, '2025-05-28', 9, 52, NULL, 5, NULL, NULL),
+(61, '2025-05-28', 9, 52, 78, 5, NULL, NULL),
 (62, '2025-05-29', 9, 49, NULL, 5, NULL, NULL),
 (63, '2025-05-29', 9, 50, NULL, 5, NULL, NULL),
 (64, '2025-05-29', 9, 51, NULL, 5, NULL, NULL),
@@ -501,12 +758,12 @@ INSERT INTO `appointment` (`id_appointment`, `date`, `id_doctor`, `id_ranges`, `
 (72, '2025-05-31', 9, 52, NULL, 5, NULL, NULL),
 (73, '2025-05-26', 23, 1, NULL, 13, NULL, NULL),
 (74, '2025-05-26', 23, 2, NULL, 13, NULL, NULL),
-(75, '2025-05-26', 23, 3, NULL, 13, NULL, NULL),
+(75, '2025-05-26', 23, 3, 65, 13, NULL, NULL),
 (76, '2025-05-26', 23, 4, NULL, 13, NULL, NULL),
 (77, '2025-05-26', 23, 5, NULL, 13, NULL, NULL),
 (78, '2025-05-26', 23, 6, NULL, 13, NULL, NULL),
 (79, '2025-05-26', 23, 7, NULL, 13, NULL, NULL),
-(80, '2025-05-26', 23, 8, NULL, 13, NULL, NULL),
+(80, '2025-05-26', 23, 8, 89, 13, NULL, 22),
 (81, '2025-05-26', 23, 9, NULL, 13, NULL, NULL),
 (82, '2025-05-26', 23, 10, NULL, 13, NULL, NULL),
 (83, '2025-05-26', 23, 11, NULL, 13, NULL, NULL),
@@ -592,15 +849,15 @@ INSERT INTO `appointment` (`id_appointment`, `date`, `id_doctor`, `id_ranges`, `
 (163, '2025-05-31', 23, 15, NULL, 13, NULL, NULL),
 (164, '2025-05-31', 23, 16, NULL, 13, NULL, NULL),
 (165, '2025-06-02', 29, 53, 90, 17, NULL, NULL),
-(166, '2025-06-02', 29, 54, NULL, 17, NULL, NULL),
-(167, '2025-06-02', 29, 55, NULL, 17, NULL, NULL),
+(166, '2025-06-02', 29, 54, 70, 17, NULL, NULL),
+(167, '2025-06-02', 29, 55, 71, 17, NULL, NULL),
 (168, '2025-06-02', 29, 56, 87, 17, NULL, NULL),
 (169, '2025-06-02', 29, 57, 67, 17, NULL, NULL),
-(170, '2025-06-02', 29, 58, NULL, 17, NULL, NULL),
-(171, '2025-06-02', 29, 59, NULL, 17, NULL, NULL),
+(170, '2025-06-02', 29, 58, 70, 17, NULL, NULL),
+(171, '2025-06-02', 29, 59, 69, 17, NULL, 60),
 (172, '2025-06-02', 29, 60, NULL, 17, NULL, NULL),
-(173, '2025-06-03', 29, 53, NULL, 17, NULL, NULL),
-(174, '2025-06-03', 29, 54, NULL, 17, NULL, NULL),
+(173, '2025-06-03', 29, 53, 79, 17, NULL, NULL),
+(174, '2025-06-03', 29, 54, 69, 17, NULL, 53),
 (175, '2025-06-03', 29, 55, NULL, 17, NULL, NULL),
 (176, '2025-06-03', 29, 56, NULL, 17, NULL, NULL),
 (177, '2025-06-03', 29, 57, NULL, 17, NULL, NULL),
@@ -618,11 +875,11 @@ INSERT INTO `appointment` (`id_appointment`, `date`, `id_doctor`, `id_ranges`, `
 (189, '2025-06-05', 29, 53, NULL, 17, NULL, NULL),
 (190, '2025-06-05', 29, 54, NULL, 17, NULL, NULL),
 (191, '2025-06-05', 29, 55, NULL, 17, NULL, NULL),
-(192, '2025-06-05', 29, 56, NULL, 17, NULL, NULL),
+(192, '2025-06-05', 29, 56, 64, 17, NULL, NULL),
 (193, '2025-06-05', 29, 57, NULL, 17, NULL, NULL),
 (194, '2025-06-05', 29, 58, NULL, 17, NULL, NULL),
-(195, '2025-06-05', 29, 59, NULL, 17, NULL, NULL),
-(196, '2025-06-05', 29, 60, NULL, 17, NULL, NULL),
+(195, '2025-06-05', 29, 59, 63, 17, NULL, NULL),
+(196, '2025-06-05', 29, 60, 62, 17, NULL, NULL),
 (197, '2025-06-06', 29, 53, NULL, 17, NULL, NULL),
 (198, '2025-06-06', 29, 54, NULL, 17, NULL, NULL),
 (199, '2025-06-06', 29, 55, NULL, 17, NULL, NULL),
@@ -641,12 +898,12 @@ INSERT INTO `appointment` (`id_appointment`, `date`, `id_doctor`, `id_ranges`, `
 (212, '2025-06-02', 36, 62, NULL, 23, NULL, NULL),
 (213, '2025-06-02', 36, 63, NULL, 23, NULL, NULL),
 (214, '2025-06-02', 36, 64, NULL, 23, NULL, NULL),
-(215, '2025-06-02', 36, 65, NULL, 23, NULL, NULL),
-(216, '2025-06-02', 36, 66, NULL, 23, NULL, NULL),
+(215, '2025-06-02', 36, 65, 63, 23, NULL, NULL),
+(216, '2025-06-02', 36, 66, 70, 23, NULL, NULL),
 (217, '2025-06-02', 36, 67, NULL, 23, NULL, NULL),
 (218, '2025-06-02', 36, 68, NULL, 23, NULL, NULL),
 (219, '2025-06-03', 36, 61, NULL, 23, NULL, NULL),
-(220, '2025-06-03', 36, 62, NULL, 23, NULL, NULL),
+(220, '2025-06-03', 36, 62, 79, 23, NULL, NULL),
 (221, '2025-06-03', 36, 63, NULL, 23, NULL, NULL),
 (222, '2025-06-03', 36, 64, NULL, 23, NULL, NULL),
 (223, '2025-06-03', 36, 65, NULL, 23, NULL, NULL),
@@ -686,7 +943,7 @@ INSERT INTO `appointment` (`id_appointment`, `date`, `id_doctor`, `id_ranges`, `
 (257, '2025-07-01', 44, 71, NULL, 32, NULL, NULL),
 (258, '2025-07-01', 44, 72, NULL, 32, NULL, NULL),
 (259, '2025-07-01', 44, 73, NULL, 32, NULL, NULL),
-(260, '2025-07-01', 44, 74, NULL, 32, NULL, NULL),
+(260, '2025-07-01', 44, 74, 1, 32, NULL, NULL),
 (261, '2025-07-02', 44, 69, NULL, 32, NULL, NULL),
 (262, '2025-07-02', 44, 70, NULL, 32, NULL, NULL),
 (263, '2025-07-02', 44, 71, NULL, 32, NULL, NULL),
@@ -712,18 +969,80 @@ INSERT INTO `appointment` (`id_appointment`, `date`, `id_doctor`, `id_ranges`, `
 (283, '2025-07-07', 44, 73, NULL, 32, NULL, NULL),
 (284, '2025-07-07', 44, 74, NULL, 32, NULL, NULL),
 (285, '2025-06-02', 7, 75, 60, 3, NULL, NULL),
-(286, '2025-06-02', 7, 76, 74, 3, NULL, NULL),
+(286, '2025-06-02', 7, 76, 74, 3, NULL, 42),
 (287, '2025-06-02', 7, 77, NULL, 3, NULL, NULL),
 (288, '2025-06-02', 7, 78, NULL, 3, NULL, NULL),
-(289, '2025-06-02', 7, 79, 60, 3, NULL, NULL),
+(289, '2025-06-02', 7, 79, 60, 3, NULL, 54),
 (290, '2025-05-23', 14, 53, 68, 7, NULL, NULL),
 (291, '2025-05-23', 14, 54, NULL, 7, NULL, NULL),
 (292, '2025-05-23', 14, 55, NULL, 7, NULL, NULL),
 (293, '2025-05-23', 14, 56, NULL, 7, NULL, NULL),
-(294, '2025-05-23', 14, 57, NULL, 7, NULL, NULL),
+(294, '2025-05-23', 14, 57, 81, 7, NULL, 44),
 (295, '2025-05-23', 14, 58, NULL, 7, NULL, NULL),
-(296, '2025-05-23', 14, 59, NULL, 7, NULL, NULL),
-(297, '2025-05-23', 14, 60, NULL, 7, NULL, NULL);
+(296, '2025-05-23', 14, 59, 68, 7, NULL, NULL),
+(297, '2025-05-23', 14, 60, 62, 7, NULL, NULL),
+(298, '2025-07-14', 34, 49, NULL, 21, NULL, NULL),
+(299, '2025-07-14', 34, 50, NULL, 21, NULL, NULL),
+(300, '2025-07-14', 34, 51, 71, 21, NULL, NULL),
+(301, '2025-07-14', 34, 52, NULL, 21, NULL, NULL),
+(302, '2025-07-15', 34, 49, 60, 21, NULL, NULL),
+(303, '2025-07-15', 34, 50, NULL, 21, NULL, NULL),
+(304, '2025-07-15', 34, 51, NULL, 21, NULL, NULL),
+(305, '2025-07-15', 34, 52, NULL, 21, NULL, NULL),
+(306, '2025-07-16', 34, 49, NULL, 21, NULL, NULL),
+(307, '2025-07-16', 34, 50, NULL, 21, NULL, NULL),
+(308, '2025-07-16', 34, 51, NULL, 21, NULL, NULL),
+(309, '2025-07-16', 34, 52, NULL, 21, NULL, NULL),
+(310, '2025-07-17', 34, 49, NULL, 21, NULL, NULL),
+(311, '2025-07-17', 34, 50, NULL, 21, NULL, NULL),
+(312, '2025-07-17', 34, 51, NULL, 21, NULL, NULL),
+(313, '2025-07-17', 34, 52, NULL, 21, NULL, NULL),
+(314, '2025-07-18', 34, 49, NULL, 21, NULL, NULL),
+(315, '2025-07-18', 34, 50, NULL, 21, NULL, NULL),
+(316, '2025-07-18', 34, 51, NULL, 21, NULL, NULL),
+(317, '2025-07-18', 34, 52, NULL, 21, NULL, NULL),
+(318, '2025-04-01', 47, 80, NULL, 47, NULL, NULL),
+(319, '2025-04-01', 47, 81, NULL, 47, NULL, NULL),
+(320, '2025-04-01', 47, 82, NULL, 47, NULL, NULL),
+(321, '2025-04-01', 47, 83, NULL, 47, NULL, NULL),
+(322, '2024-03-02', 3, 55, NULL, 2, NULL, NULL),
+(323, '2024-03-02', 3, 56, 84, 1, NULL, NULL),
+(324, '2024-03-02', 3, 57, 69, 1, NULL, 30),
+(325, '2024-03-02', 3, 58, 70, 1, NULL, 40),
+(326, '2024-03-02', 3, 59, 69, 1, NULL, NULL),
+(327, '2024-03-02', 3, 60, 86, 1, NULL, 32),
+(328, '2024-03-02', 3, 61, 71, 1, NULL, 35),
+(329, '2024-03-02', 3, 62, 74, 1, NULL, 56),
+(330, '2024-03-02', 3, 63, 70, 1, NULL, 39),
+(331, '2024-03-02', 3, 64, 67, 1, NULL, 58),
+(332, '2024-03-02', 3, 65, NULL, 1, NULL, NULL),
+(333, '2024-03-02', 3, 66, 60, 1, NULL, 37),
+(334, '2025-05-26', 32, 49, 67, 19, NULL, NULL),
+(335, '2025-05-26', 32, 50, NULL, 19, NULL, NULL),
+(336, '2025-05-26', 32, 51, NULL, 19, NULL, NULL),
+(337, '2025-05-26', 32, 52, NULL, 19, NULL, NULL),
+(338, '2025-05-27', 32, 49, NULL, 19, NULL, NULL),
+(339, '2025-05-27', 32, 50, NULL, 19, NULL, NULL),
+(340, '2025-05-27', 32, 51, NULL, 19, NULL, NULL),
+(341, '2025-05-27', 32, 52, NULL, 19, NULL, NULL),
+(342, '2025-06-02', 9, 49, NULL, 5, NULL, NULL),
+(343, '2025-06-02', 9, 50, NULL, 5, NULL, NULL),
+(344, '2025-06-02', 9, 51, NULL, 5, NULL, NULL),
+(345, '2025-06-02', 9, 52, NULL, 5, NULL, NULL),
+(346, '2025-06-06', 27, 84, NULL, 15, NULL, NULL),
+(347, '2025-06-06', 27, 85, NULL, 15, NULL, NULL),
+(348, '2025-06-06', 27, 86, NULL, 15, NULL, NULL),
+(349, '2025-06-06', 27, 87, NULL, 15, NULL, NULL),
+(350, '2025-06-06', 27, 88, NULL, 15, NULL, NULL),
+(351, '2025-06-07', 27, 84, NULL, 15, NULL, NULL),
+(352, '2025-06-07', 27, 85, NULL, 15, NULL, NULL),
+(353, '2025-06-07', 27, 86, NULL, 15, NULL, NULL),
+(354, '2025-06-07', 27, 87, NULL, 15, NULL, NULL),
+(355, '2025-06-09', 27, 84, NULL, 15, NULL, NULL),
+(356, '2025-06-09', 27, 85, NULL, 15, NULL, NULL),
+(357, '2025-06-09', 27, 86, NULL, 15, NULL, NULL),
+(358, '2025-06-09', 27, 87, NULL, 15, NULL, NULL),
+(359, '2025-06-09', 27, 88, NULL, 15, NULL, NULL);
 
 -- --------------------------------------------------------
 
@@ -1056,7 +1375,7 @@ CREATE TABLE `disease` (
 --
 
 INSERT INTO `disease` (`id_disease`, `name_of_disease`, `symptoms`, `treatment_recommendations`, `medicament`, `id_field`) VALUES
-(1, 'Грипп', 'Лихорадка, кашель, головная боль', 'Покой, обильное питье, противовирусные препараты', 'Тамифлю', 1),
+(1, 'Грипп', 'Лихорадка, кашель, головная боль, насморк', 'Покой, обильное питье, противовирусные препараты', 'Тамифлю', 1),
 (2, 'Аппендицит', 'Боль в правом нижнем квадранте живота', 'Хирургическое вмешательство', 'Антибиотики', 2),
 (3, 'Кариес', 'Боль в зубах, чувствительность', 'Пломбирование, удаление зуба', 'Обезболивающие', 4),
 (4, 'Эндометриоз', 'Боль внизу живота, менструальные нарушения', 'Гормональная терапия, хирургия', 'Гормональные препараты', 5),
@@ -1065,13 +1384,13 @@ INSERT INTO `disease` (`id_disease`, `name_of_disease`, `symptoms`, `treatment_r
 (7, 'Диабет', 'Чувство жажды, частое мочеиспускание', 'Контроль уровня сахара, инсулинотерапия', 'Инсулин', 8),
 (8, 'Мигрень', 'Сильная головная боль, тошнота', 'Обезболивающие, отдых', 'Триптаны', 9),
 (9, 'Гипертония', 'Головные боли, головокружение', 'Контроль давления, медикаментозная терапия', 'Антигипертензивные препараты', 10),
-(10, 'Щитовидная недостаточность', 'Усталость, увеличение веса', 'Гормональная терапия', 'Левотироксин', 11),
+(10, 'Щитовидная недостаточность', 'Усталость, увеличение веса, медлительностью мышления и речи, зябкость, нарушение менструального цикла', 'Гормональная терапия', 'Левотироксин', 11),
 (11, 'Ревматоидный артрит', 'Боль и отек суставов', 'Противовоспалительные препараты, физиотерапия', 'Метотрексат', 12),
 (12, 'Пневмония', 'Кашель, одышка, высокая температура', 'Антибиотики, покой', 'Амоксициллин', 13),
 (13, 'Аллергический ринит', 'Чихание, зуд в носу', 'Антигистаминные препараты', 'Лоратадин', 14),
 (14, 'Экзема', 'Зуд, покраснение кожи', 'Увлажняющие кремы, кортикостероиды', 'Гидрокортизон', 15),
 (15, 'Гастрит', 'Боль в животе, тошнота', 'Диета, антациды', 'Ранитидин', 16),
-(16, 'Отит', 'Боль в ухе, снижение слуха', 'Антибиотики, обезболивающие', 'Амоксициллин', 17),
+(16, 'Отит', 'Боль в ухе, снижение слуха', 'Антибиотики, обезболивающие', 'Амоксициллин', 18),
 (17, 'Депрессия', 'Усталость, потеря интереса', 'Психотерапия, антидепрессанты', 'Сертралин', 18),
 (18, 'Травма колена', 'Боль, отек', 'Физиотерапия, покой', 'Обезболивающие', 19),
 (19, 'Рак легких', 'Кашель, одышка, потеря веса', 'Химиотерапия, радиотерапия', 'Цисплатин', 20),
@@ -1080,12 +1399,18 @@ INSERT INTO `disease` (`id_disease`, `name_of_disease`, `symptoms`, `treatment_r
 (22, 'Гепатит', 'Усталость, желтуха', 'Диета, противовирусные препараты', 'Софосбувир', 23),
 (23, 'Аневризма', 'Боль в груди, головокружение', 'Хирургическое вмешательство', 'Антигипертензивные препараты', 24),
 (24, 'Инфекционный мононуклеоз', 'Лихорадка, боль в горле, увеличение лимфоузлов', 'Покой, обильное питье', 'Обезболивающие', 25),
-(25, 'Сердечная недостаточность', 'Одышка, отеки', 'Медикаментозная терапия, изменение образа жизни', 'Диуретики', 26),
+(25, 'Диагноз не установлен', 'Одышка, отеки', 'Медикаментозная терапия, изменение образа жизни', 'Диуретики', 10),
 (26, 'Спортивная травма', 'Боль, отек, ограничение движений', 'Покой, физиотерапия', 'Обезболивающие', 27),
 (27, 'Медицинская генетика', 'Наследственные заболевания', 'Генетическое консультирование', 'Специфические препараты', 28),
 (28, 'Гастроэзофагеальная рефлюксная болезнь', 'Изжога, регургитация', 'Изменение диеты, антациды', 'Пантопразол', 29),
 (29, 'Хроническая обструктивная болезнь легких', 'Одышка, хронический кашель', 'Бронходилататоры, кислородная терапия', 'Сальбутамол', 30),
-(30, 'Ревматизм', 'Боль в суставах, усталость', 'Противовоспалительные препараты', 'Ибупрофен', 31);
+(30, 'Ревматизм', 'Боль в суставах, усталость', 'Противовоспалительные препараты', 'Ибупрофен', 31),
+(31, 'Астма', 'Одышка, свистящее дыхание, кашель, сжатие в груди', 'Избегать триггеров, ингаляционные кортикостероиды, бронходилататоры', 'Албутерол, Флутиказон', 15),
+(32, 'Синдром поликистозных яичников', 'Нарушение менструального цикла, боль в области малого таза, лишний вес, изенение состояния колжи и волос, бесплодие', 'Снижение массы тела, улучшение психологического сотояния, физические нагрузки', 'Противозачаточные средства, Метформин, Кломифен, Прогестагены', 5),
+(33, 'Хронический гастрит', 'Чувство тяжести в эпигастральной области во время или сразу после еды, отрыжка, изжога, расстройства стула, непереносимость определенной пищи, лекарств, боли на голодный желудок, тошнота, рвота', 'Регулярное питание без голоданий и перекусов, употреблять пищу небольшими порциями 5-6 раз в день. Ультразвуковая терапия, электрофорез, фонофорез. ', 'Дротаверин, домперидон', 1),
+(34, 'Диагноз не установлен', '', '', '', 1),
+(35, 'Диагноз не установлен', '', '', '', 1),
+(36, 'Диагноз не установлен', '', '', '', 1);
 
 -- --------------------------------------------------------
 
@@ -1326,7 +1651,7 @@ INSERT INTO `info_about_polyclinic` (`id_polyclinic`, `name_polyclinic`, `addres
 CREATE TABLE `medical_history` (
   `id_history` int(11) NOT NULL,
   `complaints` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `id_disease` int(90) NOT NULL
+  `id_disease` int(90) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
@@ -1353,7 +1678,34 @@ INSERT INTO `medical_history` (`id_history`, `complaints`, `id_disease`) VALUES
 (17, 'Головные боли', 9),
 (18, 'Усталость, увеличение веса', 10),
 (19, 'Лихорадка, кашель', 1),
-(20, 'Боль в правом нижнем квадранте живота', 2);
+(20, 'Боль в правом нижнем квадранте живота, лихорадка, тошнота и рвота, отсутсвие аппетита', 2),
+(21, 'Лихорадка, кашель, насморк', 1),
+(22, 'Cпецифические свистящие хрипы, покраснение и отёчность глаз, приступы сухого кашля', 32),
+(25, 'Нарушение цикла, лишний вес, бесплодие', 22),
+(26, 'Лихорадка, кашель', 1),
+(27, 'Боль в правом нижнем квадранте живота, рвота', 2),
+(28, 'Лихорадка, кашель, насморк', 1),
+(30, 'Боли на голодный желудок, тошнота, рвота, частая изжога', 33),
+(32, 'Боль в ухе, снижение слуха', 16),
+(33, '', NULL),
+(35, 'Одышка, отеки', 25),
+(36, '', 35),
+(37, '', 36),
+(39, '', NULL),
+(40, 'Боль в суставах рук', 6),
+(42, 'Размытость зрения, трудности с ночным зрением', 5),
+(44, 'Усталость, увеличение веса, медлительностью мышления и речи, зябкость, нарушение менструального цикла', 10),
+(45, 'Чувство жажды, частое мочеиспускание', 7),
+(46, 'Чувство жажды, частое мочеиспускание', 7),
+(47, 'Чувство жажды, частое мочеиспускание', 7),
+(53, '', NULL),
+(54, '', NULL),
+(55, '', NULL),
+(56, 'Лихорадка, кашель, головная боль, насморк', 1),
+(57, '', NULL),
+(58, 'Сильная головная боль, тошнота', 8),
+(59, '', NULL),
+(60, 'Головные боли, головокружение, тошнота', 9);
 
 -- --------------------------------------------------------
 
@@ -1450,7 +1802,16 @@ INSERT INTO `operating_ranges` (`id_ranges`, `range_start`, `range_end`) VALUES
 (76, '08:45:00', '09:30:00'),
 (77, '09:30:00', '10:15:00'),
 (78, '10:15:00', '11:00:00'),
-(79, '11:00:00', '11:45:00');
+(79, '11:00:00', '11:45:00'),
+(80, '12:00:00', '13:00:00'),
+(81, '13:00:00', '14:00:00'),
+(82, '14:00:00', '15:00:00'),
+(83, '15:00:00', '16:00:00'),
+(84, '12:00:00', '12:45:00'),
+(85, '12:45:00', '13:30:00'),
+(86, '13:30:00', '14:15:00'),
+(87, '14:15:00', '15:00:00'),
+(88, '15:00:00', '15:45:00');
 
 -- --------------------------------------------------------
 
@@ -1632,7 +1993,7 @@ INSERT INTO `staff` (`id_doctor`, `full_name`, `birthday`, `post`, `status`, `ad
 (10, 'Соловьев Дмитрий Андреевич', '1984-01-15', 'Стоматолог-хирург', 1, 'г. Москва, ул. Садовая, д. 16', '+7 900 678-89-01', 3),
 (11, 'Тихонов Алексей Сергеевич', '1986-08-30', 'Стоматолог-пародонтолог', 1, 'г. Москва, ул. Кутузовский проспект, д. 14', '+7 955 678-90-12', 3),
 (12, 'Лебедева Наталья Викторовна', '1991-10-12', 'Стоматолог-ортопед', 1, 'г. Москва, ул. Ленинградский проспект, д. 45', '+7 978 678-01-23', 3),
-(13, 'Семенов Василий Петрович', '1989-03-05', 'Врач акушер-гинеколог', 1, 'г. Москва, ул. Чистопрудный бульвар, д. 4', '+7 987 890-12-34', 4),
+(13, 'Семенов Василий Петрович', '1989-03-05', 'Врач акушер-гинеколог', 1, 'г. Москва, ул. Чистопрудный бульвар, д. 4', ' 7 987 890-12-34', 4),
 (14, 'Васильева Екатерина Сергеевна', '1990-11-02', 'Врач акушер-гинеколог', 1, 'г. Москва, ул. Сухаревская, д. 2', '+7 904 012-34-56', 4),
 (15, 'Кузьмина Татьяна Викторовна', '1985-09-14', 'Врач акушер-гинеколог', 1, 'г. Москва, ул. Кузнецкий мост, д. 6', '+7 975 246-80-35', 4),
 (16, 'Громова Юлия Владимировна', '1988-02-22', 'Врач акушер-гинеколог', 1, 'г. Москва, ул. Пресненская набережная, д. 8', '+7 933 680-54-79', 4),
@@ -1670,6 +2031,18 @@ INSERT INTO `staff` (`id_doctor`, `full_name`, `birthday`, `post`, `status`, `ad
 (48, 'Мария Егорова Александровна', '1998-05-14', 'Врач-уролог', 0, 'г. Москва, ул. Солнечная, д. 15', '+7 958 254-78-98', 21),
 (49, 'Любавина Мария Александровна', '1992-02-02', 'Врач-уролог', 0, 'г. Москва, ул. Ягодная, д. 15', '+7 958 254-78-98', 21),
 (50, 'Шик Анна Ивановна', '1981-08-02', 'Врач-гастроэнтеролог', 1, 'г. Москва, ул. Мирная, д. 13', '+7 965 247-85-95', 28);
+
+--
+-- Триггеры `staff`
+--
+DELIMITER $$
+CREATE TRIGGER `after_delete_doctor` AFTER DELETE ON `staff` FOR EACH ROW BEGIN
+  UPDATE appointment
+  SET id_doctor = 0
+  WHERE id_doctor = OLD.id_doctor;
+END
+$$
+DELIMITER ;
 
 --
 -- Индексы сохранённых таблиц
@@ -1808,7 +2181,7 @@ ALTER TABLE `staff`
 -- AUTO_INCREMENT для таблицы `appointment`
 --
 ALTER TABLE `appointment`
-  MODIFY `id_appointment` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=298;
+  MODIFY `id_appointment` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=360;
 
 --
 -- AUTO_INCREMENT для таблицы `cabinet`
@@ -1844,7 +2217,7 @@ ALTER TABLE `department`
 -- AUTO_INCREMENT для таблицы `disease`
 --
 ALTER TABLE `disease`
-  MODIFY `id_disease` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=31;
+  MODIFY `id_disease` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=37;
 
 --
 -- AUTO_INCREMENT для таблицы `education`
@@ -1874,13 +2247,13 @@ ALTER TABLE `info_about_polyclinic`
 -- AUTO_INCREMENT для таблицы `medical_history`
 --
 ALTER TABLE `medical_history`
-  MODIFY `id_history` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=21;
+  MODIFY `id_history` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=61;
 
 --
 -- AUTO_INCREMENT для таблицы `operating_ranges`
 --
 ALTER TABLE `operating_ranges`
-  MODIFY `id_ranges` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=80;
+  MODIFY `id_ranges` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=89;
 
 --
 -- AUTO_INCREMENT для таблицы `polyclinic_schedule`
